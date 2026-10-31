@@ -218,3 +218,45 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# MTAH 2027: match data must NEVER be committed (repo is public).
+# ---------------------------------------------------------------------------
+# Data folders (keep data/ itself via .gitkeep, ignore its contents)
+data/*
+!data/.gitkeep
+gdrive_data/
+*Dataset*/
+
+# Match files: tracking, homography, smart tagging, video
+BAR-ATH*
+*_atd.txt
+*_atd.xml
+*_homography.csv
+*_smart_tagging.xml
+
+# Data / media / generated output formats
+*.csv
+*.xml
+*.txt
+!requirements*.txt
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.npy
+*.npz
+*.parquet
+*.feather
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Markdown files (README.md is kept)
+*.md
+!README.md
