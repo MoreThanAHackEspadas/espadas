@@ -1,0 +1,11 @@
+Vendored from the official MTAH 2027 challenge repository:
+  https://github.com/metrica-sports/more-than-a-hack-2027
+  commit f8f2629ff1e0985f81d7e59d8413678514ee1530 (2026-10-23)
+
+Files (byte-for-byte unmodified):
+  games.py
+  possession_metrics.py
+  validate_submission.py
+
+Copyright (c) 2026-2027 Metrica Sports. MIT Licence, see LICENSE in this folder.
+The licence covers code only. No match data is vendored here or anywhere in this repo.

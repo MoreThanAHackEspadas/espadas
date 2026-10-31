@@ -260,3 +260,7 @@ BAR-ATH*
 # Markdown files (README.md is kept)
 *.md
 !README.md
+
+# Local build output and caches (may contain derived match data)
+out/
+cache/
