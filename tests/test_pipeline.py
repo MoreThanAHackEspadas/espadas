@@ -65,12 +65,23 @@ def test_atd_parse_synthetic(tmp_path):
     raw = tmp_path / "x_atd.txt"
     raw.write_text("1:0.5,0.5,1.0;NaN,NaN,NaN:0.5,0.5,0.0\n"
                    "3:0.0,1.0,0.0;1.0,0.0,0.0:NaN,NaN,NaN\n")
-    players, ball = atd.parse_raw(str(raw), n_slots=2, n_frames=4, pitch=(100.0, 50.0))
+    players, ball, player_speed, ball_speed = atd.parse_raw(str(raw), n_slots=2, n_frames=4,
+                                                           pitch=(100.0, 50.0))
     assert players[0, 0].tolist() == [50.0, 25.0]
     assert np.isnan(players[0, 1]).all()
     assert ball[0].tolist() == [50.0, 25.0]
     assert np.isnan(ball[1]).all() and np.isnan(ball[2]).all()
     assert players[2, 1].tolist() == [100.0, 0.0]
+    assert player_speed[0].tolist()[0] == 1.0 and np.isnan(player_speed[0, 1])
+    assert ball_speed[0] == 0.0 and np.isnan(ball_speed[1]) and np.isnan(ball_speed[2])
+
+
+def test_half_of_frame():
+    half = config.half_of_frame()
+    assert half[11184] == 0 and half[11185] == 1 and half[90651] == 1 and half[90652] == 0
+    assert half[110808] == 2 and half[190197] == 2 and half[190198] == 0
+    assert np.sum(half > 0) == 158857
+    assert config.KICKOFFS == (11185, 113741)
 
 
 def test_atd_teams_synthetic(tmp_path):

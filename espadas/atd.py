@@ -36,21 +36,27 @@ def team_of_each_track(meta_path):
 
 
 def _parse_group(group):
-    """'x,y,speed' -> (x, y) floats, NaN when missing."""
+    """'x,y,speed' -> (x, y, speed) floats, NaN when missing."""
     if not group or group[0] == "N":
-        return np.nan, np.nan
-    x, y = group.split(",")[:2]
-    return float(x), float(y)
+        return np.nan, np.nan, np.nan
+    fields = group.split(",")
+    speed = float(fields[2]) if len(fields) > 2 else np.nan
+    return float(fields[0]), float(fields[1]), speed
 
 
 def parse_raw(raw_path, n_slots, n_frames=config.N_FRAMES, pitch=config.PITCH):
     """Players (n_frames, n_slots, 2) and ball (n_frames, 2) in metres, float64 (matches the baseline exactly), NaN if missing.
 
-    Frames the file does not mention stay NaN.
+    Also the speed the tracker reports for each object, in m/s: player_speed (n_frames, n_slots)
+    and ball_speed (n_frames,), float32. Frames the file does not mention stay NaN. The tracker
+    sometimes reports a position with no speed, so a speed can be NaN where the position is not;
+    prep.ball_speed() derives speed from positions instead.
     """
     length, width = pitch
     players = np.full((n_frames, n_slots, 2), np.nan, dtype=np.float64)
     ball = np.full((n_frames, 2), np.nan, dtype=np.float64)
+    player_speed = np.full((n_frames, n_slots), np.nan, dtype=np.float32)
+    ball_speed = np.full(n_frames, np.nan, dtype=np.float32)
 
     with open(raw_path) as handle:
         for line in handle:
@@ -62,35 +68,43 @@ def parse_raw(raw_path, n_slots, n_frames=config.N_FRAMES, pitch=config.PITCH):
                 continue
             groups = parts[1].split(";")
             for slot in range(min(n_slots, len(groups))):
-                x, y = _parse_group(groups[slot])
+                x, y, s = _parse_group(groups[slot])
                 players[frame, slot, 0] = x * length
                 players[frame, slot, 1] = y * width
-            bx, by = _parse_group(parts[2])
+                player_speed[frame, slot] = s
+            bx, by, bs = _parse_group(parts[2])
             ball[frame, 0] = bx * length
             ball[frame, 1] = by * width
-    return players, ball
+            ball_speed[frame] = bs
+    return players, ball, player_speed, ball_speed
+
+
+# Bump whenever parse_raw's output changes, so an old cache is never read back.
+CACHE_VERSION = 2
+CACHED = ("players", "ball", "player_speed", "ball_speed")
 
 
 def _cache_path(raw_path):
     stat = os.stat(raw_path)
-    key = "{}|{}|{}|{}".format(os.path.basename(raw_path), stat.st_size, int(stat.st_mtime),
-                               config.PITCH)
+    key = "{}|{}|{}|{}|v{}".format(os.path.basename(raw_path), stat.st_size, int(stat.st_mtime),
+                                   config.PITCH, CACHE_VERSION)
     digest = hashlib.sha256(key.encode()).hexdigest()[:16]
     return os.path.join(config.CACHE_DIR, "atd_{}.npz".format(digest))
 
 
 def load_tracking(data_dir=None, use_cache=True):
-    """dict(players, ball, team_of_slot) for the tactical source."""
+    """dict(players, ball, player_speed, ball_speed, team_of_slot) for the tactical source."""
     meta_path, raw_path = config.require(["atd_meta", "atd_raw"], data_dir)
     team_of_slot = team_of_each_track(meta_path)
 
     cache = _cache_path(raw_path)
     if use_cache and os.path.isfile(cache):
         with np.load(cache) as z:
-            return {"players": z["players"], "ball": z["ball"], "team_of_slot": team_of_slot}
-
-    players, ball = parse_raw(raw_path, len(team_of_slot))
-    if use_cache:
-        os.makedirs(config.CACHE_DIR, exist_ok=True)
-        np.savez(cache, players=players, ball=ball)
-    return {"players": players, "ball": ball, "team_of_slot": team_of_slot}
+            tracking = {name: z[name] for name in CACHED}
+    else:
+        tracking = dict(zip(CACHED, parse_raw(raw_path, len(team_of_slot))))
+        if use_cache:
+            os.makedirs(config.CACHE_DIR, exist_ok=True)
+            np.savez(cache, **tracking)
+    tracking["team_of_slot"] = team_of_slot
+    return tracking
