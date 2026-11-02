@@ -25,10 +25,7 @@ def finalise(labels, abstain_ungraded=True):
     labels[start:end + 1] = "D"
 
     if abstain_ungraded:
-        graded = np.zeros(config.N_FRAMES, dtype=bool)
-        for _, first, last in config.HALF_BLOCKS:
-            graded[first:last + 1] = True
-        labels[~graded] = "X"
+        labels[config.half_of_frame() == 0] = "X"
     return labels
 
 

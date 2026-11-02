@@ -35,6 +35,12 @@ SECOND_HALF_START = HALF_BLOCKS[1][1]
 SECOND_HALF_KICKOFF = games.anchor_video_frame(_G["kickoff_2nd"])
 PRE_KICKOFF_DEAD = (SECOND_HALF_START, SECOND_HALF_KICKOFF)  # inclusive range, always D
 
+# Kickoff video frame of each half. The first half is graded from its kickoff (DATA.md), so its
+# first graded frame is the kickoff; the second is the documented anchor above. (The organisers'
+# starter/load_smart_tagging.py uses 113742 for the second, one frame later; that is irrelevant to
+# anything read from a window around the kickoff.)
+KICKOFFS = (HALF_BLOCKS[0][1], SECOND_HALF_KICKOFF)
+
 TEAM_NAME = "espadas"
 SEED = 0
 
@@ -47,6 +53,17 @@ def seed_everything(seed=SEED):
     random.seed(seed)
     np.random.seed(seed)
     os.environ.setdefault("PYTHONHASHSEED", str(seed))
+
+
+def half_of_frame(n_frames=N_FRAMES, half_blocks=None):
+    """int8 per video frame: 1 or 2 on the graded frames of that half, 0 on ungraded frames.
+
+    half_blocks defaults to this match's HALF_BLOCKS; pass another match's to reuse it there.
+    """
+    half = np.zeros(n_frames, dtype=np.int8)
+    for number, first, last in (HALF_BLOCKS if half_blocks is None else half_blocks):
+        half[first:last + 1] = number
+    return half
 
 
 def data_dir(override=None):

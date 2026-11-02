@@ -49,7 +49,10 @@ python third_party/mtah2027/validate_submission.py out/espadas.csv   # official 
 | Path | What |
 |---|---|
 | `espadas/config.py` | data path, match constants (from the official `games.py`), seeds |
-| `espadas/atd.py` | tracking loader (step 1) |
+| `espadas/atd.py` | tracking loader: positions and speeds (step 1) |
+| `espadas/tagging.py` | Smart Tagging loader and per-frame masks (step 1) |
+| `espadas/prep.py` | ball cleaning, gap filling, gap lengths, ball speed, attacking direction (step 1); `prepare()` takes another match's halves/kickoffs too |
+| `espadas/homography.py` | optional pitch -> pixel homography, for video work |
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
