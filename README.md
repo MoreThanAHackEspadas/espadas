@@ -49,7 +49,7 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 ## Build the submission
 
 ```bash
-python -m espadas.run                   # -> out/espadas.csv, validated, prints its SHA-256
+python -m espadas.run                   # -> out/espadas.csv (labeler v1), validated, prints its SHA-256
 ```
 
 The first run parses the tracking (a couple of minutes) and caches arrays in `cache/`. The cache
@@ -62,7 +62,7 @@ python -m pytest -q                      # unit tests, synthetic data only
 python tools/check_no_data.py --all      # nothing tracked looks like match data
 python tools/check_determinism.py        # two clean builds -> identical bytes
 python third_party/mtah2027/validate_submission.py out/espadas.csv   # official format check
-python -m espadas.run --raw --out out/raw.csv && \
+python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
   python tools/compare_csv.py out/raw.csv "$MTAH_OFFICIAL_DIR/evaluation/results/baseline_smooth50.csv"  # v0 == official baseline
 ```
 
@@ -76,6 +76,7 @@ python -m espadas.run --raw --out out/raw.csv && \
 | `espadas/prep.py` | ball cleaning, gap filling, gap lengths, ball speed, attacking direction (step 1); `prepare()` takes another match's halves/kickoffs too |
 | `espadas/homography.py` | optional pitch -> pixel homography, for video work |
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
+| `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
 | `espadas/external/` | external games: readers, events → reference labels, ball hiding, bench |
@@ -103,9 +104,10 @@ Reference labels on external games are derived **by code** from each game's even
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
 python tools/fetch_metrica.py                      # download, pinned to one commit
-python -m espadas.external.bench --labeler v0      # score labelers on the external games
+python -m espadas.external.bench --labeler v0 v1   # score labelers on the external games
+python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
 ```
 
-The bench hides extra ball frames on external games (default: until 41% of graded frames have no
-ball, like our match), so settings are tested under similar conditions. `--hide-ball -1` turns
-it off.
+The Metrica games lose the ball almost only during stoppages, while ours also loses it in live
+play. So the bench hides ball bursts in live play (default 25% of live frames; see
+`espadas/external/degrade.py`). `--hide-ball -1` turns it off.

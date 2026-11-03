@@ -55,4 +55,6 @@ def v0_baseline(tracking, window=50):
     return majority_smooth(codes, window)
 
 
-LABELERS = {"v0": v0_baseline}
+from .v1 import v1 as v1_rules  # noqa: E402  (after the helpers it does not need)
+
+LABELERS = {"v0": v0_baseline, "v1": v1_rules}

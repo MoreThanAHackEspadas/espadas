@@ -32,17 +32,29 @@ def reference(game):
     return labels, half_blocks, kickoffs
 
 
-def score(labeler_name, game, hide_ball=None):
+def setup(game, hide_ball=None):
+    """(gt codes, labeler input, graded mask) for one game: reference labels, the tracking the
+    labeler sees (ball hidden if asked) and which frames are scored."""
     gt, half_blocks, kickoffs = reference(game)
     tracking = dict(game["tracking"], half_blocks=half_blocks, kickoffs=kickoffs,
                     fps=game["fps"], pitch=game["pitch"])
+    graded = config.half_of_frame(game["n_frames"], half_blocks) > 0
     if hide_ball is not None:
-        graded = config.half_of_frame(game["n_frames"], half_blocks) > 0
-        tracking["ball"], _ = degrade.hide_ball(tracking["ball"], tracking["players"], graded,
+        live = (gt == "H") | (gt == "A")
+        tracking["ball"], _ = degrade.hide_ball(tracking["ball"], tracking["players"], live,
                                                 hide_ball)
-    pred = np.asarray(labelers.LABELERS[labeler_name](tracking), dtype="<U1").copy()
-    pred[config.half_of_frame(game["n_frames"], half_blocks) == 0] = "X"
-    return pm.evaluate(pm.label_codes(gt), pm.label_codes(pred))
+    return pm.label_codes(gt), tracking, graded
+
+
+def evaluate(gt_codes, labels, graded):
+    pred = np.asarray(labels, dtype="<U1").copy()
+    pred[~graded] = "X"
+    return pm.evaluate(gt_codes, pm.label_codes(pred))
+
+
+def score(labeler_name, game, hide_ball=None):
+    gt_codes, tracking, graded = setup(game, hide_ball)
+    return evaluate(gt_codes, labelers.LABELERS[labeler_name](tracking), graded)
 
 
 def available(numbers):
@@ -62,14 +74,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--labeler", nargs="+", default=["v0"], choices=sorted(labelers.LABELERS))
     parser.add_argument("--games", nargs="+", type=int, default=[1, 2, 3])
-    parser.add_argument("--hide-ball", type=float, default=0.41, metavar="FRAC",
-                        help="hide ball bursts until this fraction of graded frames has no ball "
-                             "(default 0.41, like our match; pass a negative value to disable)")
+    parser.add_argument("--hide-ball", type=float, default=degrade.LIVE_MISSING, metavar="FRAC",
+                        help="hide ball bursts until this fraction of LIVE frames has no ball "
+                             "(default {}; negative disables)".format(degrade.LIVE_MISSING))
     args = parser.parse_args(argv)
     config.seed_everything()
 
     games = available(args.games)
-    print("ball hidden to {} missing on graded frames".format(
+    print("ball hidden to {} missing on live frames".format(
         "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
     print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}".format(
         "labeler", "game", "split", "spellF1", "spell@.5", "macroF1", "n_pred", "n_gt"))

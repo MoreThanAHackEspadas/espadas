@@ -21,7 +21,7 @@ def main(argv=None):
     parser.add_argument("--data-dir", help="data bundle root (default: $MTAH_DATA_DIR)")
     parser.add_argument("--out", default=os.path.join(config.REPO_ROOT, "out",
                                                       config.TEAM_NAME + ".csv"))
-    parser.add_argument("--labeler", default="v0", choices=sorted(labelers.LABELERS))
+    parser.add_argument("--labeler", default="v1", choices=sorted(labelers.LABELERS))
     parser.add_argument("--raw", action="store_true",
                         help="skip finalise() (no forced D window, no X on ungraded frames); "
                              "useful for comparing against the organisers' baseline files")
