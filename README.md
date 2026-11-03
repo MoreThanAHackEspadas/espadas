@@ -78,7 +78,8 @@ python -m espadas.run --raw --out out/raw.csv && \
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
-| `tools/` | data guard, determinism check, CSV diff |
+| `espadas/external/` | external games: readers, events → reference labels, ball hiding, bench |
+| `tools/` | data guard, determinism check, CSV diff, Metrica download |
 | `third_party/mtah2027/` | official `games.py`, `possession_metrics.py`, `validate_submission.py` (MIT, Metrica Sports) |
 
 ## Documentation
@@ -88,5 +89,23 @@ everywhere else). The tech doc is exported to `espadas.pdf` for submission.
 
 ## External data
 
-None yet. Every external dataset used for development or tuning will be listed here with its
-source and licence. No data about this match from any outside source is used.
+Per the organisers' clarification, every parameter is tuned on **external data only**, never on
+the ground truth or the provided video. External data lives outside this repo under
+`MTAH_EXTERNAL_DIR` (default: `external_data/` next to the repo) and is never committed.
+
+| Dataset | Source | Terms | Used for |
+|---|---|---|---|
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | No formal licence; README: "be responsible with the use of this data", "acknowledge the source". Written confirmation requested from the organisers. | Tuning (Games 1, 3) and held-out comparison (Game 2) |
+
+Reference labels on external games are derived **by code** from each game's event data
+(`espadas/external/events.py`, rules documented there). No hand labels are used.
+
+```bash
+export MTAH_EXTERNAL_DIR="<workdir>/external_data"
+python tools/fetch_metrica.py                      # download, pinned to one commit
+python -m espadas.external.bench --labeler v0      # score labelers on the external games
+```
+
+The bench hides extra ball frames on external games (default: until 41% of graded frames have no
+ball, like our match), so settings are tested under similar conditions. `--hide-ball -1` turns
+it off.
