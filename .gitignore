@@ -257,9 +257,10 @@ BAR-ATH*
 *.tar.gz
 *.7z
 
-# Markdown files (README.md is kept)
+# Markdown files (README.md and docs/*.md are kept; CLAUDE.md etc. stay local)
 *.md
 !README.md
+!docs/*.md
 
 # Local build output and caches (may contain derived match data)
 out/

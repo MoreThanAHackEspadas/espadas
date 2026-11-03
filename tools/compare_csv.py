@@ -1,6 +1,8 @@
 """How many frames differ between two submission CSVs. Prints counts only.
 
-    python tools/compare_csv.py out/espadas_raw.csv ../git_repo/evaluation/results/baseline_smooth50.csv
+    python tools/compare_csv.py out/raw.csv "$MTAH_OFFICIAL_DIR/evaluation/results/baseline_smooth50.csv"
+
+MTAH_OFFICIAL_DIR is your clone of the official challenge repository (see README, "Local layout").
 """
 
 import sys

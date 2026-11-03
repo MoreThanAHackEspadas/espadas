@@ -49,10 +49,14 @@ CACHE_DIR = os.environ.get("ESPADAS_CACHE_DIR") or os.path.join(REPO_ROOT, "cach
 
 
 def seed_everything(seed=SEED):
-    """Fix every RNG we use. Call once at the start of any entry point."""
+    """Fix every RNG we use. Call once at the start of any entry point.
+
+    PYTHONHASHSEED is deliberately not set here: it only takes effect when the interpreter
+    starts, so setting it in-process does nothing. Nothing in the pipeline depends on hash
+    order; if that ever changes, set it in the shell before running.
+    """
     random.seed(seed)
     np.random.seed(seed)
-    os.environ.setdefault("PYTHONHASHSEED", str(seed))
 
 
 def half_of_frame(n_frames=N_FRAMES, half_blocks=None):
