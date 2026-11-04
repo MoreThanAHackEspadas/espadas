@@ -26,6 +26,22 @@ How that maps onto Metrica events (definitions: documentation/events-definitions
 - Graded frames per period run from its first event (the kickoff) to its last event's end.
   Everything else is X (ungraded), like halftime in our match.
 
+Control vs loose (Phase 7): `control_mask` marks frames where a player has the ball at his feet,
+the complement being loose (in flight or contested). Windows are half-open, per period:
+
+- PASS / SET PIECE that is_control() with end > start: loose [start + 1, end). The kick frame and
+  the reception frame are at a player's feet.
+- SHOT that is_control(): loose [start + 1, end + 1) (end is start when missing). Same shape as a
+  pass: the kick frame is controlled, the end frame is not a reception.
+- BALL LOST: loose [start + 1, next in-play event's start), to the period's end if none.
+- Touch-only in-play events (RECOVERY, CHALLENGE, headers, clearances): scan forward over in-play
+  events that have a team. First by the other team: loose [start, that event's start). First by
+  the same team that is_control(): no window (the "won ball" rule). Same team, touch-only: keep
+  scanning. None found: loose to the period's end.
+- CARRY and everything else: no window.
+
+Consequence: the mask is True wherever the reference labels start a new possession spell.
+
 Frames are converted from Metrica's 1-based numbering to 0-based array indices here.
 These are fixed definitions, not tuned parameters. Fully deterministic.
 """
@@ -109,6 +125,57 @@ def dead_windows(events):
             stop = np.iinfo(np.int64).max
         windows.append((start, stop))
     return windows
+
+
+def loose_windows(events):
+    """[(start, stop)] half-open 0-based frame spans where the ball is in flight or contested.
+
+    `events` are the (already sorted) events of one period. Rules in the module docstring.
+    """
+    forever = np.iinfo(np.int64).max
+    windows = []
+    for k, e in enumerate(events):
+        later = [x for x in events[k + 1:] if x["type"] in IN_PLAY]
+        end = e["end"] if e["end"] is not None else e["start"]
+        if e["type"] in ("PASS", "SET PIECE") and is_control(e):
+            if end > e["start"]:
+                windows.append((e["start"] + 1, end))
+        elif e["type"] == "SHOT" and is_control(e):
+            windows.append((e["start"] + 1, max(end, e["start"]) + 1))
+        elif e["type"] == "BALL LOST" and is_control(e):
+            windows.append((e["start"] + 1, later[0]["start"] if later else forever))
+        elif (e["type"] in IN_PLAY or e["type"] == "CHALLENGE") and e["type"] != "CARRY" \
+                and not is_control(e):  # CHALLENGE is touch-only but not in IN_PLAY
+            stop = forever
+            for x in later:
+                if x["team"] is None:
+                    continue
+                if x["team"] != e["team"]:
+                    stop = x["start"]
+                    break
+                if is_control(x):  # the same team won the ball: no loose window
+                    stop = None
+                    break
+            if stop is not None:
+                windows.append((e["start"], stop))
+    return windows
+
+
+def control_mask(events, n_frames):
+    """bool array: True where a player has the ball at his feet, False where it is loose.
+
+    False outside the periods. Only meaningful on live frames; mask with the H/A/D labels.
+    """
+    events = sorted(events, key=lambda e: (e["start"], e["order"]))
+    mask = np.zeros(n_frames, dtype=bool)
+    for period, (first, last) in periods(events).items():
+        in_period = [e for e in events if e["period"] == period]
+        mask[first:last + 1] = True
+        for start, stop in loose_windows(in_period):
+            lo, hi = max(start, first), min(stop, last + 1)
+            if hi > lo:
+                mask[lo:hi] = False
+    return mask
 
 
 def labels_from_events(events, n_frames):

@@ -65,3 +65,46 @@ def test_offside_is_dead_until_free_kick():
               e(2, H, "BALL LOST", 3, 5, "OFFSIDE"),
               e(3, A, "SET PIECE", 9, sub="FREE KICK-INDIRECT"), e(4, A, "PASS", 9, 11)]
     assert run(events, 12) == "HHHHH" + "DDDD" + "AAA"
+
+
+def ctrl(events, n):
+    return "".join("C" if c else "." for c in ev.control_mask(events, n))
+
+
+def test_pass_flight_is_loose_carry_and_kick_and_reception_are_controlled():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 4),
+              e(2, H, "CARRY", 4, 8), e(3, H, "PASS", 8, 12)]
+    assert ctrl(events, 14) == "C...CCCCC...C."
+
+
+def test_won_ball_is_controlled_from_the_touch_and_lost_ball_is_loose():
+    events = [e(0, A, "SET PIECE", 0, sub="KICK OFF"), e(1, A, "PASS", 0, 6),
+              e(2, H, "RECOVERY", 6, 6, "INTERCEPTION"), e(3, H, "PASS", 8, 10),
+              e(4, H, "BALL LOST", 12, 14, "INTERCEPTION"),
+              e(5, A, "RECOVERY", 16, 16), e(6, A, "PASS", 18, 20)]
+    assert ctrl(events, 22) == "C.....CCC.CCC...CCC.C."
+    assert run(events, 22) == "A" * 6 + "H" * 10 + "A" * 5 + "X"
+
+
+def test_touch_only_followed_by_the_other_team_is_loose():
+    events = [e(0, A, "SET PIECE", 0, sub="KICK OFF"), e(1, A, "PASS", 0, 4),
+              e(2, H, "CHALLENGE", 6, 6, "GROUND-LOST"), e(3, A, "PASS", 8, 10)]
+    assert ctrl(events, 12) == "C...CC..C.C."
+
+
+def test_shot_is_loose_after_the_kick_and_recovery_before_a_pass_is_controlled():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 2),
+              e(2, H, "SHOT", 4, 6, "ON TARGET-SAVED"), e(3, A, "RECOVERY", 7, 7),
+              e(4, A, "PASS", 8, 9)]
+    assert ctrl(events, 11) == "C.CCC..CCC."
+
+
+def test_control_mask_is_true_wherever_the_reference_starts_a_new_spell():
+    events = [e(0, A, "SET PIECE", 0, sub="KICK OFF"), e(1, A, "PASS", 0, 6),
+              e(2, H, "RECOVERY", 6, 6, "INTERCEPTION"), e(3, H, "PASS", 8, 10),
+              e(4, H, "BALL LOST", 12, 14, "INTERCEPTION"),
+              e(5, A, "RECOVERY", 16, 16), e(6, A, "PASS", 18, 20)]
+    labels = ev.labels_from_events(events, 22)[0]
+    mask = ev.control_mask(events, 22)
+    starts = [t for t in range(1, 22) if labels[t] in "HA" and labels[t] != labels[t - 1]]
+    assert starts == [6, 16] and all(mask[t] for t in starts)
