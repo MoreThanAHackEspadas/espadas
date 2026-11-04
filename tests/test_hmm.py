@@ -55,3 +55,26 @@ def test_viterbi_matches_brute_force_and_is_deterministic():
     first = hmm.viterbi(em, trans, start)
     assert first.tolist() == best
     assert np.array_equal(first, hmm.viterbi(em, trans, start))
+
+
+def test_expand_with_all_ones_is_the_identity():
+    trans = np.log(np.array([[0.9, 0.1], [0.2, 0.8]]))
+    start = np.log([0.5, 0.5])
+    tx, sx, macro = hmm.expand(trans, start, [1, 1])
+    assert np.array_equal(tx, trans) and np.array_equal(sx, start) and macro.tolist() == [0, 1]
+
+
+def test_expand_enforces_the_minimum_run_length():
+    em = np.zeros((12, 2))
+    em[::2, 0], em[1::2, 1] = 10.0, 10.0           # the evidence flips every frame
+    free = np.log(np.full((2, 2), 0.5))
+    tx, sx, macro = hmm.expand(free, np.log([0.5, 0.5]), [3, 1])
+    path = macro[hmm.viterbi(em[:, macro], tx, sx)]
+    runs = [len(list(g)) for k, g in itertools.groupby(path) if k == 0]
+    assert runs and min(runs) >= 3 and path.tolist()[:3] == [0, 0, 0]
+
+
+def test_expand_shorter_than_minimum():
+    free = np.log(np.full((2, 2), 0.5))
+    tx, sx, macro = hmm.expand(free, np.log([0.5, 0.5]), [5, 5])
+    assert macro[hmm.viterbi(np.array([[0.0, 1.0], [0.0, 1.0]])[:, macro], tx, sx)].tolist() == [1, 1]
