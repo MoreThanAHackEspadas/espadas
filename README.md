@@ -123,7 +123,10 @@ play. So the bench hides ball bursts in live play (default 25% of live frames; s
 
 The Metrica ball is drawn as straight lines between key points (razor-sharp corners at every
 kick), while an automatic tracker like ours smooths the ball's path. So the bench also blurs the
-Metrica ball (`--blur light|medium|heavy|none`, default `medium`), and `tools/tune.py` and
-`tools/fit_evidence.py` tune and fit over all three blur levels at once.
+Metrica ball and gives the Metrica players tracker-like position error (`--blur
+light|medium|heavy|smooth|none`, default `medium`; "smooth" = strong smoothing with little noise,
+like a filtered tracker). `tools/tune.py` and `tools/fit_evidence.py` tune and fit over all four
+tracker levels at once (`degrade.TRACKER_LEVELS`); both take `--skip-heldout` to keep Game 2
+unseen while developing.
 `python tools/self_consistency.py --tracking` compares input quality (aggregates only) between
 the external games and ours.
