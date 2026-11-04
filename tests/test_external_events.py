@@ -99,6 +99,20 @@ def test_shot_is_loose_after_the_kick_and_recovery_before_a_pass_is_controlled()
     assert ctrl(events, 11) == "C.CCC..CCC."
 
 
+def test_shot_saved_and_recovered_on_its_end_frame_is_controlled_there():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 2),
+              e(2, H, "SHOT", 4, 6, "ON TARGET-SAVED"), e(3, A, "RECOVERY", 6, 6),
+              e(4, A, "PASS", 8, 9)]
+    assert ctrl(events, 11) == "C.CCC.CCCC."
+    assert run(events, 11) == "HHHHHH" + "AAAA" + "X"
+
+
+def test_ball_lost_with_nothing_after_is_loose_to_the_period_end():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 2),
+              e(2, H, "BALL LOST", 4, 6, "INTERCEPTION")]
+    assert ctrl(events, 8) == "C.CCC..."
+
+
 def test_control_mask_is_true_wherever_the_reference_starts_a_new_spell():
     events = [e(0, A, "SET PIECE", 0, sub="KICK OFF"), e(1, A, "PASS", 0, 6),
               e(2, H, "RECOVERY", 6, 6, "INTERCEPTION"), e(3, H, "PASS", 8, 10),

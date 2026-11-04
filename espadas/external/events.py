@@ -29,10 +29,11 @@ How that maps onto Metrica events (definitions: documentation/events-definitions
 Control vs loose (Phase 7): `control_mask` marks frames where a player has the ball at his feet,
 the complement being loose (in flight or contested). Windows are half-open, per period:
 
-- PASS / SET PIECE that is_control() with end > start: loose [start + 1, end). The kick frame and
-  the reception frame are at a player's feet.
-- SHOT that is_control(): loose [start + 1, end + 1) (end is start when missing). Same shape as a
-  pass: the kick frame is controlled, the end frame is not a reception.
+- PASS / SET PIECE that is_control() with end > start: loose [start + 1, min(end, next)). The kick
+  frame and the reception frame are at a player's feet. `next` is the start of the next in-play
+  event with a team, so no window reaches past the frame where a new spell can start.
+- SHOT that is_control(): loose [start + 1, min(end + 1, next)) (end is start when missing). Same
+  shape as a pass: the kick frame is controlled, the end frame is not a reception.
 - BALL LOST: loose [start + 1, next in-play event's start), to the period's end if none.
 - Touch-only in-play events (RECOVERY, CHALLENGE, headers, clearances): scan forward over in-play
   events that have a team. First by the other team: loose [start, that event's start). First by
@@ -51,6 +52,7 @@ import numpy as np
 HOME, AWAY = 0, 1
 
 IN_PLAY = {"PASS", "SHOT", "CARRY", "RECOVERY", "BALL LOST", "SET PIECE"}
+LOOSE_SOURCES = IN_PLAY | {"CHALLENGE"}  # CHALLENGE is touch-only but not in IN_PLAY
 CONTROL = {"PASS", "SHOT", "CARRY", "BALL LOST", "SET PIECE"}
 TOUCH_SUBTYPES = ("HEAD", "CLEARANCE")
 # BALL LOST subtypes that mean the referee stopped play (Game 3 tags these instead of a foul).
@@ -136,16 +138,16 @@ def loose_windows(events):
     windows = []
     for k, e in enumerate(events):
         later = [x for x in events[k + 1:] if x["type"] in IN_PLAY]
+        next_start = next((x["start"] for x in later if x["team"] is not None), forever)
         end = e["end"] if e["end"] is not None else e["start"]
         if e["type"] in ("PASS", "SET PIECE") and is_control(e):
             if end > e["start"]:
-                windows.append((e["start"] + 1, end))
+                windows.append((e["start"] + 1, min(end, next_start)))
         elif e["type"] == "SHOT" and is_control(e):
-            windows.append((e["start"] + 1, max(end, e["start"]) + 1))
+            windows.append((e["start"] + 1, min(max(end, e["start"]) + 1, next_start)))
         elif e["type"] == "BALL LOST" and is_control(e):
             windows.append((e["start"] + 1, later[0]["start"] if later else forever))
-        elif (e["type"] in IN_PLAY or e["type"] == "CHALLENGE") and e["type"] != "CARRY" \
-                and not is_control(e):  # CHALLENGE is touch-only but not in IN_PLAY
+        elif e["type"] in LOOSE_SOURCES and not is_control(e):
             stop = forever
             for x in later:
                 if x["team"] is None:
