@@ -57,5 +57,6 @@ def v0_baseline(tracking, window=50):
 
 from .v1 import v1 as v1_rules  # noqa: E402  (after the helpers it does not need)
 from .v2 import v2 as v2_evidence  # noqa: E402
+from .v3 import v3 as v3_touches  # noqa: E402
 
-LABELERS = {"v0": v0_baseline, "v1": v1_rules, "v2": v2_evidence}
+LABELERS = {"v0": v0_baseline, "v1": v1_rules, "v2": v2_evidence, "v3": v3_touches}
