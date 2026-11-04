@@ -31,3 +31,33 @@ def viterbi(emissions, log_trans, log_start):
     for t in range(T - 1, 0, -1):
         path[t - 1] = back[t, path[t]]
     return path
+
+
+def expand(log_trans, log_start, mins):
+    """Chain each state so it cannot be left before ``mins[s]`` frames.
+
+    State s becomes ``mins[s]`` sub-states. It is entered at its first link,
+    moves along the chain by forced steps (log 0), and the last link carries
+    the original row of s: its self-loop stays on the last link and its exits
+    go to the first link of the target. Everything else is ``-inf``.
+    Returns ``(log_trans_x, log_start_x, macro)``; ``macro`` is an int64 array
+    mapping each expanded state to its original index, so a caller runs
+    ``viterbi(emissions[:, macro], tx, sx)`` and maps back with ``macro[path]``.
+    """
+    log_trans = np.asarray(log_trans, dtype=np.float64)
+    log_start = np.asarray(log_start, dtype=np.float64)
+    mins = np.asarray(mins, dtype=np.int64)
+    S = len(mins)
+    first = np.cumsum(mins) - mins  # index of each state's first link
+    last = first + mins - 1
+    macro = np.repeat(np.arange(S, dtype=np.int64), mins)
+    n = int(mins.sum())
+    tx = np.full((n, n), -np.inf)
+    sx = np.full(n, -np.inf)
+    sx[first] = log_start
+    for s in range(S):
+        for k in range(first[s], last[s]):
+            tx[k, k + 1] = 0.0
+        for j in range(S):
+            tx[last[s], last[s] if j == s else first[j]] = log_trans[s, j]
+    return tx, sx, macro
