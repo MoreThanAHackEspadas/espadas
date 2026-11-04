@@ -52,7 +52,9 @@ def test_dead_offset_is_fixed_at_zero_without_a_ball():
 
 
 def test_clear_evidence_switches_weak_or_absent_evidence_does_not():
-    p = dict(v4.PARAMS, **RAW)
+    # ctrl_lo is 0 in these fixtures, which is only "no information" if the control score is
+    # off (a tuned ctrl_offset turns 0 into "loose"); these tests are about the team evidence.
+    p = dict(v4.PARAMS, w_ctrl=0.0, **RAW)
     clear = v4.decode(_f(team_lo=_team(300, 2.0, -2.0)), p)
     assert set(clear[:140]) == {"H"} and set(clear[160:]) == {"A"}
     silent = v4.decode(_f(team_lo=_team(300, 2.0, 0.0)), p)
@@ -65,7 +67,7 @@ def test_clear_evidence_switches_weak_or_absent_evidence_does_not():
 def test_confirmed_touch_switches_and_plain_touch_does_not():
     touch = {"frame": np.array([150]), "slot": np.array([0]), "team": np.array([1], np.int8),
              "strength": np.array([8.0])}
-    p = dict(v4.PARAMS, confirm_pulse=12.0, touch_pulse=1.0, **RAW)
+    p = dict(v4.PARAMS, confirm_pulse=12.0, touch_pulse=1.0, w_ctrl=0.0, **RAW)
     f = _f(team_lo=_team(300, 1.0, 0.0), touches=touch, touch_ok=np.array([True]))
     out = v4.decode(f, p)
     assert set(out[:140]) == {"H"} and set(out[160:]) == {"A"}

@@ -77,10 +77,12 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/homography.py` | optional pitch -> pixel homography, for video work |
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games |
-| `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) combined into a dead log-odds and a home log-odds per frame; models fitted by `tools/fit_evidence.py` on external games, stored in `evidence_models.py` |
+| `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) combined into a dead log-odds and a home log-odds per frame, plus the Phase 7 control log-odds (ball at a player's feet vs in flight / contested); models fitted by `tools/fit_evidence.py` on external games, stored in `evidence_models.py` |
 | `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
 | `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close), team, control confirmation (pass chain or hold), touch pulses for the decoder |
 | `espadas/v3.py` | `v3`: `v2` + touch pulses; settings tuned by `tools/tune.py --labeler v3` |
+| `espadas/hmm.py` | Phase 7: generic Viterbi decoder and minimum-duration chains; knows nothing about football |
+| `espadas/v4.py` | `v4`: five-state HMM (dead, home/away control, home/away loose) over the Phase 5 scores, Phase 6 touches and the control score; settings tuned by `tools/tune.py --labeler v4`; design in `docs/phase7_hmm_design.md` |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
 | `espadas/external/` | external games: readers, events → reference labels, ball hiding, bench |
@@ -108,11 +110,12 @@ Reference labels on external games are derived **by code** from each game's even
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
 python tools/fetch_metrica.py                      # download, pinned to one commit
-python -m espadas.external.bench --labeler v0 v1 v2 v3  # score labelers on the external games
+python -m espadas.external.bench --labeler v0 v1 v2 v3 v4 --games 1 3  # score labelers on the tuning games (Game 2 only at selection)
 python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
-python tools/fit_evidence.py                       # refit the Phase 5 evidence models (writes evidence_models.py)
+python tools/fit_evidence.py                       # refit the Phase 5 evidence models and the Phase 7 control model (writes evidence_models.py; --heldout to also report Game 2)
 python tools/tune.py --labeler v2                  # re-tune v2's decoding (prints PARAMS)
 python tools/tune.py --labeler v3                  # re-tune v3 (prints PARAMS)
+python tools/tune.py --labeler v4 --skip-heldout   # re-tune v4 without scoring Game 2 (prints PARAMS)
 ```
 
 The Metrica games lose the ball almost only during stoppages, while ours also loses it in live

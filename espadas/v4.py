@@ -42,46 +42,54 @@ STATES = ("D", "HC", "HL", "AC", "AL")
 D, HC, HL, AC, AL = range(5)
 LABEL = np.array(["D", "H", "H", "A", "A"])
 
-# Fixed, not tuned (design 4.5): re-opening one is a one-line change to GRID, decided on the
-# tuning games only.
+# Fixed, not tuned (design 4.5). Touches are built once in features(), so re-opening one of
+# these would mean building them in decode() (as v3.touch_signal does) before adding it to GRID;
+# decided on the tuning games only.
 TOUCH = {k: v3.PARAMS[k] for k in ("kink_half", "kink_threshold", "touch_reach", "chain_gap",
                                    "hold_reach", "hold_frames")}
 
-# Start values (design 4.5), not tuned yet.
+# Tuned 5 Nov 2026 with tools/tune.py --labeler v4 --skip-heldout on Metrica 1 and 3 over
+# light/medium/heavy ball blur, ball hidden on 25% of live frames (run 1): mean tuning spellF1
+# 0.5697 (light 0.557 / 0.583, medium 0.568 / 0.574, heavy 0.570 / 0.566; v3 on the same bench
+# 0.572, v1 ~0.56). At 15% / 35% live ball hidden: 0.584 / 0.549. w_dead, w_ctrl, confirm_pulse
+# and touch_pulse ended at the top of their grids and loose_len at the bottom, so those grids
+# were widened below for a second run that has not been made yet (checklist 7.8). The tuner
+# prefers touches and the control score over the Phase 5 team clues (w_team 0.25).
+# Held-out Game 2 not scored (checklist 4.10); scored once at selection.
 PARAMS = {
-    "ctrl_len": 150,         # frames in control before the ball goes loose
-    "loose_len": 25,         # frames a loose ball stays loose
-    "win_share": 0.3,        # share of loose spells the other team wins
-    "to_dead_len": 1500,     # live frames before a stoppage
+    "ctrl_len": 50,          # frames in control before the ball goes loose
+    "loose_len": 6,          # frames a loose ball stays loose
+    "win_share": 0.5,        # share of loose spells the other team wins
+    "to_dead_len": 1000,     # live frames before a stoppage
     "dead_len": 500,         # frames of a stoppage
-    "w_dead": 1.0,           # weight of the dead log-odds
-    "dead_offset": 0.5,      # dead log-odds offset, ball-tracked frames only (else 0, fixed)
-    "w_team": 1.0,           # weight of the home log-odds in control states
+    "w_dead": 5.0,           # weight of the dead log-odds
+    "dead_offset": 1.0,      # dead log-odds offset, ball-tracked frames only (else 0, fixed)
+    "w_team": 0.25,          # weight of the home log-odds in control states
     "team_cap": 1.0,         # clip on the home log-odds
     "w_loose": 0.3,          # weight of the home log-odds in loose states
-    "w_ctrl": 1.0,           # weight of the control log-odds
-    "ctrl_offset": 0.0,      # control log-odds offset
-    "confirm_pulse": 6.0,    # log-odds, one frame, for a confirmed touch
-    "touch_pulse": 1.0,      # log-odds, one frame, for any other touch
+    "w_ctrl": 5.0,           # weight of the control log-odds
+    "ctrl_offset": 1.0,      # control log-odds offset
+    "confirm_pulse": 12.0,   # log-odds, one frame, for a confirmed touch
+    "touch_pulse": 4.0,     # log-odds, one frame, for any other touch
     "min_dead": 50,          # frames; shorter dead runs are dropped
     "min_alive": 25,         # frames; shorter live runs between stoppages become dead
 }
 
 GRID = {
     "ctrl_len": [25, 50, 100, 150, 250, 400, 600, 1000],
-    "loose_len": [6, 12, 25, 40, 60, 100, 150],
+    "loose_len": [2, 3, 4, 6, 12, 25, 40, 60, 100, 150],
     "win_share": [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9],
     "to_dead_len": [250, 500, 1000, 1500, 2500, 5000, 10000],
     "dead_len": [50, 100, 200, 500, 1000, 2000, 3000],
-    "w_dead": [0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0],
+    "w_dead": [0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0],
     "dead_offset": [-4.0, -3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0],
     "w_team": [0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0],
     "team_cap": [0.25, 0.5, 1.0, 2.0, 3.0, 5.0],
     "w_loose": [0.0, 0.1, 0.3, 0.5, 1.0],
-    "w_ctrl": [0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+    "w_ctrl": [0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 8.0, 12.0, 20.0],
     "ctrl_offset": [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
-    "confirm_pulse": [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0],
-    "touch_pulse": [0.0, 0.5, 1.0, 2.0, 4.0],
+    "confirm_pulse": [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0, 20.0, 30.0],
+    "touch_pulse": [0.0, 0.5, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0],
     "min_dead": [0, 25, 50, 100, 150, 250],
     "min_alive": [0, 25, 50, 100, 150, 250],
 }
