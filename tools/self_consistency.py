@@ -6,7 +6,8 @@
 Prints possession count, mean duration, home share and label mix on graded frames, next to the
 same numbers for the external reference labels, so implausible output (900 possessions of 5 s)
 is visible early. --tracking instead compares the *input* (players tracked, ball seen, how close
-the nearest player is, ball jitter, touches found), to see where our tracking differs from the
+the nearest player is, ball jitter, touches found, share of ball-present frames where the control
+score says the ball is at a player's feet), to see where our tracking differs from the
 external games (checklist 6.6). Never use these numbers to choose settings: tuning happens on
 external games only (organisers' clarification). Prints aggregates only, no per-frame data.
 """
@@ -20,7 +21,7 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from espadas import atd, config, labelers, touches, v3, write  # noqa: E402
+from espadas import atd, config, evidence, labelers, touches, v3, write  # noqa: E402
 from espadas.external import bench, degrade  # noqa: E402
 
 pm = config.pm
@@ -57,24 +58,31 @@ def tracking_line(name, tracking, graded):
     ok = touches.confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"],
                            int(p["hold_frames"]))
     in_graded = graded[t["frame"]]
+    ctrl = evidence.control_log_odds(evidence.clues(tracking))[graded & f["present"]]
+    ctrl = ctrl[~np.isnan(ctrl)]
     minutes = graded.sum() / tracking.get("fps", config.FPS) / 60
-    print("{:<16}{:>8.1f}{:>8.0%}{:>9.2f}{:>8.0%}{:>8.0%}{:>9.2f}{:>9.0f}{:>8.0%}".format(
+    print("{:<16}{:>8.1f}{:>8.0%}{:>9.2f}{:>8.0%}{:>8.0%}{:>9.2f}{:>9.0f}{:>8.0%}{:>8.0%}".format(
         name, float(np.mean(tracked)), float(np.mean(present)), float(np.median(near)),
         float(np.mean(near <= 1.0)), float(np.mean(near <= 2.0)), float(np.median(jitter)),
-        in_graded.sum() / minutes * 90, float(np.mean(ok[in_graded])) if in_graded.any() else 0))
+        in_graded.sum() / minutes * 90, float(np.mean(ok[in_graded])) if in_graded.any() else 0,
+        float(np.mean(ctrl > 0)) if len(ctrl) else 0))
 
 
 def tracking_table(data_dir):
-    print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}".format(
-        "", "players", "ball", "near m", "<=1m", "<=2m", "jitter", "tch/90'", "conf"))
-    print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}".format(
-        "", "tracked", "seen", "median", "", "", "m/s", "", ""))
+    print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}{:>8}".format(
+        "", "players", "ball", "near m", "<=1m", "<=2m", "jitter", "tch/90'", "conf", "ctrl>0"))
+    print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}{:>8}".format(
+        "", "tracked", "seen", "median", "", "", "m/s", "", "", ""))
     for n, game in bench.available([1, 2, 3]):
         _, tracking, graded = bench.setup(game, degrade.LIVE_MISSING)
         tracking_line(game["name"], tracking, graded)
-    tracking = atd.load_tracking(data_dir)
-    graded = config.half_of_frame(len(tracking["ball"]), config.HALF_BLOCKS) > 0
-    tracking_line("BAR-ATH", tracking, graded)
+    try:
+        tracking = atd.load_tracking(data_dir)
+    except (IOError, OSError):
+        print("BAR-ATH: no match data on this machine")
+    else:
+        graded = config.half_of_frame(len(tracking["ball"]), config.HALF_BLOCKS) > 0
+        tracking_line("BAR-ATH", tracking, graded)
     print("external games with {:.0%} of live ball hidden, as the labelers see them; jitter = "
           "median ball velocity change (touches.kink) on frames with a ball".format(
               degrade.LIVE_MISSING))
