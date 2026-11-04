@@ -77,6 +77,8 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/homography.py` | optional pitch -> pixel homography, for video work |
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games |
+| `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) combined into a dead log-odds and a home log-odds per frame; models fitted by `tools/fit_evidence.py` on external games, stored in `evidence_models.py` |
+| `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
 | `espadas/external/` | external games: readers, events → reference labels, ball hiding, bench |
@@ -104,8 +106,10 @@ Reference labels on external games are derived **by code** from each game's even
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
 python tools/fetch_metrica.py                      # download, pinned to one commit
-python -m espadas.external.bench --labeler v0 v1   # score labelers on the external games
+python -m espadas.external.bench --labeler v0 v1 v2  # score labelers on the external games
 python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
+python tools/fit_evidence.py                       # refit the Phase 5 evidence models (writes evidence_models.py)
+python tools/tune.py --labeler v2                  # re-tune v2's decoding (prints PARAMS)
 ```
 
 The Metrica games lose the ball almost only during stoppages, while ours also loses it in live
