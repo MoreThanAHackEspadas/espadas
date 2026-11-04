@@ -4,6 +4,20 @@
 
 ## 1. Approach
 
+### Sequence model (`v4`, Phase 7)
+
+Each half is decoded as one sequence by a 5-state hidden Markov model: home in control, home
+loose (ball loose, home had it last), away in control, away loose, dead. A loose ball keeps the
+label of the last team in control, as the official rules say, so a deflection or block is not a
+change of possession. Per-frame evidence is the Phase 5 dead and home log-odds plus the Phase 6
+touches: a confirmed touch (pass chain or hold) favours that team in control, a lone touch only
+rules out the other team being in control. When the ball is not tracked, no ball-based evidence
+is used at all (no information), and on those frames the dead score keeps a fixed, untuned
+threshold (decision (b), section 2). Switching between states has a cost per kind of change
+(turnover via a loose ball, direct tackle, stoppage, restart). Viterbi finds the single best
+labelling of the half, so a change of possession is placed where its evidence starts. All
+weights and costs are tuned on the external tuning games only.
+
 ## 2. Assets used (and tried, then dropped)
 
 ## 3. Training and tuning data
