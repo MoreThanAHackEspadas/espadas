@@ -118,3 +118,10 @@ python tools/tune.py --labeler v3                  # re-tune v3 (prints PARAMS)
 The Metrica games lose the ball almost only during stoppages, while ours also loses it in live
 play. So the bench hides ball bursts in live play (default 25% of live frames; see
 `espadas/external/degrade.py`). `--hide-ball -1` turns it off.
+
+The Metrica ball is drawn as straight lines between key points (razor-sharp corners at every
+kick), while an automatic tracker like ours smooths the ball's path. So the bench also blurs the
+Metrica ball (`--blur light|medium|heavy|none`, default `medium`), and `tools/tune.py` and
+`tools/fit_evidence.py` tune and fit over all three blur levels at once.
+`python tools/self_consistency.py --tracking` compares input quality (aggregates only) between
+the external games and ours.

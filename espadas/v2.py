@@ -24,13 +24,15 @@ from . import evidence, v1
 
 HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 
-# Tuned with tools/tune.py --labeler v2 on Metrica 1 and 3, ball hidden on 25% of live frames.
-# Mean tuning spellF1 0.610 (v1: 0.591); held-out Game 2 0.634 / 0.636 / 0.620 at 25% / 15% / 35%
-# live missing (v1: 0.640 / 0.656 / 0.608). Not a clear win on held-out, so v1 stays the default.
+# Re-tuned (6.6) with tools/tune.py --labeler v2 on Metrica 1 and 3 over light/medium/heavy ball
+# blur, ball hidden on 25% of live frames: mean tuning spellF1 0.584. (Before blur: 0.610 tuning,
+# held-out 0.634 vs v1 0.640.) Held-out not re-scored yet.
 # dead_threshold < 0 means the decoder calls dead more readily than the fitted model's 50/50 point;
 # why is not yet understood (check with Phase 6 before trusting it).
+UNSEEN_THRESHOLD = None   # dead threshold on frames without a ball; None = same as dead_threshold
+
 PARAMS = {
-    "dead_smooth": 6,        # frames each side
+    "dead_smooth": 0,        # frames each side
     "dead_threshold": -2.0,  # log-odds
     "min_dead": 100,         # frames
     "min_alive": 25,         # frames
@@ -57,7 +59,15 @@ def features(tracking):
 
 def dead_mask(f, p, first, stop):
     lo = evidence.smooth(f["dead_lo"][first:stop], int(p["dead_smooth"]))
-    dead = lo > p["dead_threshold"]
+    # Checklist 6.6 (open): most ball-less frames in the Metrica games are stoppages, so a tuned
+    # threshold learns "no ball = dead" back through the decoder (on our match v2/v3 call ~91% of
+    # ball-less frames dead). unseen_threshold = 0 would mean "dead only if player motion says
+    # dead is more likely than not", untuned; it costs ~0.05 spellF1 on the tuning games, because
+    # there the assumption holds. Off until the team decides.
+    unseen = p.get("unseen_threshold", UNSEEN_THRESHOLD)
+    threshold = np.where(f["present"][first:stop], p["dead_threshold"],
+                         p["dead_threshold"] if unseen is None else unseen)
+    dead = lo > threshold
     for a, b in v1._runs(dead):
         if b - a < p["min_dead"]:
             dead[a:b] = False

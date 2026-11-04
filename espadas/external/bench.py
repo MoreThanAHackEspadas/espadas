@@ -32,13 +32,16 @@ def reference(game):
     return labels, half_blocks, kickoffs
 
 
-def setup(game, hide_ball=None):
+def setup(game, hide_ball=None, blur=degrade.BLUR_DEFAULT):
     """(gt codes, labeler input, graded mask) for one game: reference labels, the tracking the
-    labeler sees (ball hidden if asked) and which frames are scored."""
+    labeler sees (ball blurred like an automatic tracker, then hidden in live play, if asked) and
+    which frames are scored. blur is a key of degrade.BLUR."""
     gt, half_blocks, kickoffs = reference(game)
     tracking = dict(game["tracking"], half_blocks=half_blocks, kickoffs=kickoffs,
                     fps=game["fps"], pitch=game["pitch"])
     graded = config.half_of_frame(game["n_frames"], half_blocks) > 0
+    if degrade.BLUR[blur] is not None:
+        tracking["ball"] = degrade.blur_ball(tracking["ball"], *degrade.BLUR[blur])
     if hide_ball is not None:
         live = (gt == "H") | (gt == "A")
         tracking["ball"], _ = degrade.hide_ball(tracking["ball"], tracking["players"], live,
@@ -52,8 +55,8 @@ def evaluate(gt_codes, labels, graded):
     return pm.evaluate(gt_codes, pm.label_codes(pred))
 
 
-def score(labeler_name, game, hide_ball=None):
-    gt_codes, tracking, graded = setup(game, hide_ball)
+def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT):
+    gt_codes, tracking, graded = setup(game, hide_ball, blur)
     return evaluate(gt_codes, labelers.LABELERS[labeler_name](tracking), graded)
 
 
@@ -77,17 +80,20 @@ def main(argv=None):
     parser.add_argument("--hide-ball", type=float, default=degrade.LIVE_MISSING, metavar="FRAC",
                         help="hide ball bursts until this fraction of LIVE frames has no ball "
                              "(default {}; negative disables)".format(degrade.LIVE_MISSING))
+    parser.add_argument("--blur", default=degrade.BLUR_DEFAULT, choices=list(degrade.BLUR),
+                        help="ball blur level, like an automatic tracker (default {})".format(
+                            degrade.BLUR_DEFAULT))
     args = parser.parse_args(argv)
     config.seed_everything()
 
     games = available(args.games)
-    print("ball hidden to {} missing on live frames".format(
-        "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
+    print("ball blur {}, hidden to {} missing on live frames".format(
+        args.blur, "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
     print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}".format(
         "labeler", "game", "split", "spellF1", "spell@.5", "macroF1", "n_pred", "n_gt"))
     for name in args.labeler:
         for n, game in games:
-            r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None)
+            r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None, args.blur)
             split = "tune" if n in TUNING else "HELDOUT"
             print("{:<10}{:<10}{:<9}{:>9.4f}{:>10.4f}{:>9.4f}{:>8}{:>8}".format(
                 name, game["name"], split, r["spell_f1_mean"], r["spell_f1_at_headline"],

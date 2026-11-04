@@ -67,10 +67,28 @@ def test_v3_confirmed_touch_switches_and_is_deterministic():
     n = 400
     f = {"half_blocks": [(1, 0, 199), (2, 200, n - 1)], "present": np.ones(n, bool),
          "dead_lo": np.full(n, -9.0), "team_lo": np.full(n, 0.2),
-         "kink": np.zeros(n), "near": np.full(n, 0.5), "slot": np.zeros(n, np.int64),
+         "kinks": {h: np.zeros(n) for h in touches.KINK_HALVES}, "near": np.full(n, 0.5), "slot": np.zeros(n, np.int64),
          "dist": np.full((n, 3), 9.0), "team_of_slot": TEAMS}
-    f["kink"][[300, 310]] = 10.0                     # two away touches in a row = control
+    f["kinks"][2][[300, 310]] = 10.0                 # two away touches = a pass chain
     f["slot"][[300, 310]] = 2
-    labels = v3.decode(f)
+    p = {"kink_half": 2, "kink_threshold": 5.0, "touch_reach": 1.0, "chain_gap": 25,
+         "hold_frames": 0, "confirm_weight": 60.0, "touch_weight": 5.0, "switch_cost": 50.0}
+    labels = v3.decode(f, p)
     assert labels[250] == "H" and labels[350] == "A"
-    assert np.array_equal(labels, v3.decode(f))
+    assert np.array_equal(labels, v3.decode(f, p))
+    lone = dict(f, kinks={h: np.zeros(n) for h in touches.KINK_HALVES})
+    lone["kinks"][2][300] = 10.0                     # one unconfirmed away touch: no switch
+    assert set(v3.decode(lone, p)[200:]) == {"H"}
+
+
+def test_blur_ball_softens_corners_keeps_gaps_and_is_deterministic():
+    from espadas.external import degrade
+    ball, _ = _pass_play()
+    ball[150:160] = np.nan
+    blurred = degrade.blur_ball(ball, 4.0, 0.0)
+    assert np.all(np.isnan(blurred[150:160])) and not np.isnan(blurred[:150]).any()
+    sharp = touches.kink(ball, 25, 2)[40:60].max()
+    soft = touches.kink(blurred, 25, 2)[40:60].max()
+    assert soft < 0.7 * sharp
+    a = degrade.blur_ball(ball, 4.0, 0.05)
+    assert np.array_equal(a, degrade.blur_ball(ball, 4.0, 0.05), equal_nan=True)

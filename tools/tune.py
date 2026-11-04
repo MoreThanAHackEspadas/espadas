@@ -4,9 +4,11 @@
 
 Works for any labeler module exposing features(tracking), decode(features, params), PARAMS and
 GRID (v2 onwards; v1 has its own tools/tune_v1.py). Same protocol as tune_v1.py: objective is the
-mean spellF1 over Metrica 1 and 3 with the ball hidden on degrade.LIVE_MISSING of live frames;
-the chosen settings are re-scored at 15% / 35%; the held-out game is scored once, for the chosen
-settings only, and never used to choose. Our match is never touched. Deterministic.
+mean spellF1 over Metrica 1 and 3 *and* over the light, medium and heavy ball blur
+(degrade.BLUR; checklist 6.6: a method must work for any plausible tracker, not one blur level),
+with the ball hidden on degrade.LIVE_MISSING of live frames; the chosen settings are re-scored at
+15% / 35% hidden. The held-out game is scored once, for the chosen settings only, and never
+used to choose (--skip-heldout while developing). Our match is never touched. Deterministic.
 
 Copy the printed PARAMS into the labeler module.
 """
@@ -26,13 +28,14 @@ from espadas.external import bench, degrade  # noqa: E402
 
 HIDE_BALL = degrade.LIVE_MISSING
 ROBUSTNESS = (0.15, 0.35)
+OBJECTIVE_BLURS = ("light", "medium", "heavy")
 MAX_SWEEPS = 4
 
 
-def prepare(module, numbers, hide=HIDE_BALL):
+def prepare(module, numbers, hide=HIDE_BALL, blur=degrade.BLUR_DEFAULT):
     out = []
     for _, game in bench.available(numbers):
-        gt, tracking, graded = bench.setup(game, hide)
+        gt, tracking, graded = bench.setup(game, hide, blur)
         out.append((game["name"], gt, module.features(tracking), graded))
     return out
 
@@ -46,11 +49,13 @@ def objective(module, games, params):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--labeler", required=True, help="module in espadas/, e.g. v2")
+    parser.add_argument("--skip-heldout", action="store_true",
+                        help="do not score the held-out game (use while developing)")
     args = parser.parse_args(argv)
     module = importlib.import_module("espadas." + args.labeler)
     config.seed_everything()
 
-    tuning = prepare(module, bench.TUNING)
+    tuning = [g for blur in OBJECTIVE_BLURS for g in prepare(module, bench.TUNING, blur=blur)]
     params = dict(module.PARAMS)
     best, _ = objective(module, tuning, params)
     print("start   {:.4f}  {}".format(best, params))
@@ -69,17 +74,23 @@ def main(argv=None):
 
     _, per_game = objective(module, tuning, params)
     print("\nPARAMS = {}".format(params))
-    for (name, *_), s in zip(tuning, per_game):
-        print("  tune     {:<10} spellF1 {:.4f}".format(name, s))
+    for i, ((name, *_), s) in enumerate(zip(tuning, per_game)):
+        print("  tune     {:<10} blur {:<6} spellF1 {:.4f}".format(
+            name, OBJECTIVE_BLURS[i // len(bench.TUNING)], s))
+    checks = [(h, b) for h in ROBUSTNESS for b in OBJECTIVE_BLURS]
     for hide in ROBUSTNESS:
-        score, _ = objective(module, prepare(module, bench.TUNING, hide), params)
-        print("  tune @ {:.0%} live missing: mean spellF1 {:.4f}".format(hide, score))
-    for hide in (HIDE_BALL,) + ROBUSTNESS:
-        for name, gt, f, graded in prepare(module, bench.HELD_OUT, hide):
+        score = np.mean([objective(module, prepare(module, bench.TUNING, hide, b), params)[0]
+                         for b in OBJECTIVE_BLURS])
+        print("  tune @ {:.0%} live missing, all blurs: mean spellF1 {:.4f}".format(hide, score))
+    if args.skip_heldout:
+        return 0
+    for hide, blur in [(HIDE_BALL, b) for b in OBJECTIVE_BLURS] + checks:
+        for name, gt, f, graded in prepare(module, bench.HELD_OUT, hide, blur):
             r = bench.evaluate(gt, module.decode(f, params), graded)
-            print("  HELDOUT  {:<10} @ {:.0%} live missing  spellF1 {:.4f}  macroF1 {:.4f}  "
-                  "n_pred {}  n_gt {}".format(name, hide, r["spell_f1_mean"], r["macro_f1"],
-                                              r["n_pred_spells"], r["n_gt_spells"]))
+            print("  HELDOUT  {:<10} @ {:.0%} live missing, blur {:<6} spellF1 {:.4f}  "
+                  "macroF1 {:.4f}  n_pred {}  n_gt {}".format(
+                      name, hide, blur, r["spell_f1_mean"], r["macro_f1"],
+                      r["n_pred_spells"], r["n_gt_spells"]))
     return 0
 
 

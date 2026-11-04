@@ -16,34 +16,36 @@ from . import config, prep, touches, v1, v2
 
 HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 
-# Tuned with tools/tune.py --labeler v3 on Metrica 1 and 3 (25% of live ball hidden): mean
-# spellF1 0.681 (v2 0.610, v1 0.591). Held-out Game 2, scored once: 0.653 / 0.662 / 0.626 at
-# 25% / 15% / 35% live missing (v1 0.640 / 0.656 / 0.608), so it wins at every level.
-# touch_weight == switch_cost: a lone touch by the other team is enough to switch. Forcing a
-# confirmation (touch_weight 29) costs only 0.003 on the tuning games, so this is not a cliff.
-# On our match (diagnostic only, never used to tune) v3 gives 199 possessions per 90' and 47%
-# dead, outside the practice games' 254-377 and 28-39%: it may not transfer to our tracking, so
-# run.py keeps v1 as the default until that is understood.
+# Re-tuned (6.6) with tools/tune.py --labeler v3 on Metrica 1 and 3 over light/medium/heavy ball
+# blur (degrade.BLUR), ball hidden on 25% of live frames: mean tuning spellF1 0.613 (heavy blur
+# ~0.60). On blurred balls tuning weights confirmed touches *below* plain ones (20 vs 30, switch
+# cost 60): in effect "two touches by the other team switch"; the CUSUM does the confirming.
+# Before blur (sharp Metrica corners only): tuning 0.681, held-out 0.653 vs v1 0.640, but on our
+# match only 11 touches per 90' were found (1,300-1,600 on Metrica), 199 possessions / 90'.
+# Held-out not re-scored yet. run.py keeps v1 as the default.
 PARAMS = dict(v2.PARAMS, **{
     "dead_smooth": 0,
-    "dead_threshold": -2.5,
-    "min_dead": 150,
-    "team_cap": 0.5,
-    "switch_cost": 30.0,
+    "dead_threshold": -2.0,
+    "min_dead": 100,
+    "min_alive": 25,
+    "team_cap": 1.0,
+    "switch_cost": 60.0,
+    "kink_half": 4,          # frames each side over which the velocity change is measured
     "kink_threshold": 5.0,   # m/s velocity change for a touch
-    "touch_reach": 1.0,      # m; nearest player must be this close at a touch
-    "chain_gap": 25,         # frames; same-team next touch within this confirms control
-    "hold_reach": 2.0,       # m
-    "hold_frames": 12,       # frames the same player must stay with the ball (0 = off)
-    "confirm_weight": 60.0,  # pulse for a confirmed touch
+    "touch_reach": 1.5,      # m; nearest player must be this close at a touch
+    "chain_gap": 12,         # frames; same-team next touch within this confirms control
+    "hold_reach": 1.5,       # m
+    "hold_frames": 38,       # frames the same player must stay with the ball (0 = off)
+    "confirm_weight": 20.0,  # pulse for a confirmed touch
     "touch_weight": 30.0,    # pulse for any other touch
 })
 
 GRID = dict(v2.GRID, min_dead=[0, 25, 50, 100, 150, 200, 250, 350], **{
     "team_cap": [0.5, 1.0, 2.0, 3.0],
     "switch_cost": [20.0, 30.0, 45.0, 60.0, 90.0, 120.0],
-    "kink_threshold": [2.0, 3.0, 5.0, 8.0],
-    "touch_reach": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5],
+    "kink_half": list(touches.KINK_HALVES),
+    "kink_threshold": [1.0, 1.5, 2.0, 3.0, 5.0, 8.0],
+    "touch_reach": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
     "chain_gap": [6, 12, 25, 50, 100, 150],
     "hold_reach": [1.0, 1.5, 2.0],
     "hold_frames": [0, 12, 25, 38, 50],
@@ -58,17 +60,18 @@ def features(tracking):
     base = prep.prepare(tracking, half_blocks=f["half_blocks"],
                         kickoffs=tracking.get("kickoffs", config.KICKOFFS), fps=fps)
     near, slot, dist = touches.nearest_slot(tracking["players"], base["ball"])
-    f.update({"kink": touches.kink(base["ball"], fps, touches.KINK_HALF), "near": near,
+    f.update({"kinks": {h: touches.kink(base["ball"], fps, h) for h in touches.KINK_HALVES},
+              "near": near,
               "slot": slot, "dist": dist, "team_of_slot": np.asarray(tracking["team_of_slot"])})
     return f
 
 
 def touch_signal(f, p):
-    t = touches.detect(f["kink"], f["near"], f["slot"], f["team_of_slot"],
+    t = touches.detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"], f["team_of_slot"],
                        p["kink_threshold"], p["touch_reach"])
     ok = touches.confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"],
                            int(p["hold_frames"]))
-    return touches.pulses(len(f["kink"]), t, ok, p["confirm_weight"], p["touch_weight"])
+    return touches.pulses(len(f["near"]), t, ok, p["confirm_weight"], p["touch_weight"])
 
 
 def decode(f, params=None):

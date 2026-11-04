@@ -13,6 +13,16 @@ of live frames without a ball. 0.25 is the middle; tools/tune_v1.py also reports
 so a setting that only works at one level is visible.
 
 Deterministic: fixed seed, so every bench run sees the same degraded ball.
+
+**Ball blur (checklist 6.6).** The Metrica ball is drawn as straight lines between key points: it
+moves in exactly even steps (0.400 m per frame for stretches), and on ~90% of frames its path bends
+by less than 1 cm. So every kick is a razor-sharp corner. Any automatic tracker smooths the ball's
+path instead (a kick becomes a curve over several frames) and adds small position noise. A touch
+detector tuned on the sharp corners found 1,300-1,600 touches per 90' on Metrica but 11 on our
+match. blur_ball() smooths the Metrica ball with a Gaussian of `sigma` frames and adds `noise`
+metres of position noise, before the ball is hidden. The levels in BLUR are generic tracker-like
+values (0.08-0.32 s of smoothing, 2-10 cm noise), not fitted to our match; like LIVE_MISSING,
+methods are tuned at the middle level and must also hold at the others.
 """
 
 import numpy as np
@@ -21,6 +31,29 @@ CROWD_RADIUS = 5.0       # metres; players within this of the ball make a moment
 MEAN_BURST = 25          # frames; mean length of an added gap (geometric)
 SEED = 0
 LIVE_MISSING = 0.25     # fraction of live frames with no ball, after hiding
+BLUR = {"none": None, "light": (2.0, 0.02), "medium": (4.0, 0.05), "heavy": (8.0, 0.10)}
+BLUR_DEFAULT = "medium"
+BLUR_SEED = 1
+
+
+def blur_ball(ball, sigma, noise, seed=BLUR_SEED):
+    """Copy of ball (n, 2) smoothed by a Gaussian of `sigma` frames within each run of tracked
+    frames (never across a gap), plus N(0, noise) metres of position noise per axis."""
+    out = ball.copy()
+    present = ~np.isnan(ball[:, 0])
+    if sigma > 0:
+        radius = int(np.ceil(3 * sigma))
+        kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1) / sigma) ** 2)
+        edges = np.diff(np.concatenate(([0], present.astype(np.int8), [0])))
+        for a, b in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+            n = b - a
+            weight = np.convolve(np.ones(n), kernel)[radius:radius + n]
+            for axis in (0, 1):
+                out[a:b, axis] = np.convolve(ball[a:b, axis], kernel)[radius:radius + n] / weight
+    if noise > 0:
+        rng = np.random.default_rng(seed)
+        out[present] += rng.normal(0.0, noise, (int(present.sum()), 2))
+    return out
 
 
 def hide_ball(ball, players, graded, target_missing, seed=SEED, mean_burst=MEAN_BURST,

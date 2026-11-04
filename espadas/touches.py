@@ -36,7 +36,8 @@ import numpy as np
 
 HOME, AWAY = 0, 1
 MIN_SEPARATION = 5          # frames between two touches
-KINK_HALF = 2               # frames each side for the velocity change
+KINK_HALF = 2               # default frames each side for the velocity change
+KINK_HALVES = (2, 4, 6, 10)  # the widths v3 precomputes and may tune over (6.6: blurred balls)
 
 
 def ball_velocity(ball, fps):
