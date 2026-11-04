@@ -17,16 +17,16 @@ from . import config, prep, touches, v1, v2
 HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 
 # Re-tuned (6.6) with tools/tune.py --labeler v3 on Metrica 1 and 3 over light/medium/heavy ball
-# blur (degrade.BLUR), ball hidden on 25% of live frames: mean tuning spellF1 0.613 (heavy blur
-# ~0.60). On blurred balls tuning weights confirmed touches *below* plain ones (20 vs 30, switch
+# blur (degrade.BLUR), ball hidden on 25% of live frames, with v2's fixed UNSEEN_THRESHOLD: mean
+# tuning spellF1 0.572 (0.613 with a tuned threshold on ball-less frames). On blurred balls tuning weights confirmed touches *below* plain ones (20 vs 30, switch
 # cost 60): in effect "two touches by the other team switch"; the CUSUM does the confirming.
 # Before blur (sharp Metrica corners only): tuning 0.681, held-out 0.653 vs v1 0.640, but on our
 # match only 11 touches per 90' were found (1,300-1,600 on Metrica), 199 possessions / 90'.
 # Held-out not re-scored yet. run.py keeps v1 as the default.
 PARAMS = dict(v2.PARAMS, **{
-    "dead_smooth": 0,
-    "dead_threshold": -2.0,
-    "min_dead": 100,
+    "dead_smooth": 6,
+    "dead_threshold": 0.5,
+    "min_dead": 50,
     "min_alive": 25,
     "team_cap": 1.0,
     "switch_cost": 60.0,

@@ -98,3 +98,14 @@ def test_v2_decode_is_deterministic():
     assert set(labels[50:170]) == {"D"}
     assert labels[20] == "H" and labels[250] == "H" and labels[380] == "A"
     assert np.array_equal(labels, v2.decode(f))
+
+
+def test_ball_less_frames_use_fixed_threshold_not_the_tuned_one():
+    n = 400
+    present = np.ones(n, bool)
+    present[100:300] = False                         # long ball gap
+    f = {"half_blocks": [(1, 0, n - 1)], "present": present,
+         "dead_lo": np.full(n, -1.0), "team_lo": np.full(n, 1.0)}
+    p = {"dead_smooth": 0, "dead_threshold": -2.0, "min_dead": 25, "min_alive": 0}
+    assert set(v2.decode(f, p)[100:300]) == {"H"}    # -1 < 0: motion says live, so live
+    assert set(v2.decode(f, dict(p, unseen_threshold=None))[100:300]) == {"D"}

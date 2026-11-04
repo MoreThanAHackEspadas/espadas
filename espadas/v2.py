@@ -25,16 +25,17 @@ from . import evidence, v1
 HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 
 # Re-tuned (6.6) with tools/tune.py --labeler v2 on Metrica 1 and 3 over light/medium/heavy ball
-# blur, ball hidden on 25% of live frames: mean tuning spellF1 0.584. (Before blur: 0.610 tuning,
-# held-out 0.634 vs v1 0.640.) Held-out not re-scored yet.
+# blur, ball hidden on 25% of live frames, with the fixed UNSEEN_THRESHOLD: mean tuning spellF1
+# 0.546 (0.584 with a tuned threshold on ball-less frames; before blur 0.610, held-out 0.634 vs
+# v1 0.640). Held-out not re-scored yet.
 # dead_threshold < 0 means the decoder calls dead more readily than the fitted model's 50/50 point;
 # why is not yet understood (check with Phase 6 before trusting it).
-UNSEEN_THRESHOLD = None   # dead threshold on frames without a ball; None = same as dead_threshold
+UNSEEN_THRESHOLD = 0.0    # dead log-odds threshold on frames without a ball: fixed, never tuned
 
 PARAMS = {
-    "dead_smooth": 0,        # frames each side
-    "dead_threshold": -2.0,  # log-odds
-    "min_dead": 100,         # frames
+    "dead_smooth": 6,        # frames each side
+    "dead_threshold": 0.5,   # log-odds, frames with a ball (no ball: UNSEEN_THRESHOLD)
+    "min_dead": 50,          # frames
     "min_alive": 25,         # frames
     "team_cap": 1.0,         # log-odds per frame, cap on any one frame's evidence
     "switch_cost": 30.0,     # summed log-odds against the owner needed to switch
@@ -59,11 +60,13 @@ def features(tracking):
 
 def dead_mask(f, p, first, stop):
     lo = evidence.smooth(f["dead_lo"][first:stop], int(p["dead_smooth"]))
-    # Checklist 6.6 (open): most ball-less frames in the Metrica games are stoppages, so a tuned
-    # threshold learns "no ball = dead" back through the decoder (on our match v2/v3 call ~91% of
-    # ball-less frames dead). unseen_threshold = 0 would mean "dead only if player motion says
-    # dead is more likely than not", untuned; it costs ~0.05 spellF1 on the tuning games, because
-    # there the assumption holds. Off until the team decides.
+    # Checklist 6.6, decision (b): on frames without a ball the threshold is fixed at 0, i.e.
+    # "dead only if player motion says dead is more likely than not" (the motion model is fitted
+    # on all frames, so its prior is the overall dead share). Most ball-less frames in the
+    # Metrica games are stoppages, so a tuned threshold relearns "no ball = dead" through the
+    # decoder (with it, v2/v3 called ~91% of our ball-less frames dead); the organisers say our
+    # ball is often missing in live play. Chosen on reasoning, not on the bench, which holds the
+    # Metrica assumption and so scores this ~0.05 lower. None = use dead_threshold (old way).
     unseen = p.get("unseen_threshold", UNSEEN_THRESHOLD)
     threshold = np.where(f["present"][first:stop], p["dead_threshold"],
                          p["dead_threshold"] if unseen is None else unseen)
