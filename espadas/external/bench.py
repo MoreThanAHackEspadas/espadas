@@ -34,8 +34,9 @@ def reference(game):
 
 def setup(game, hide_ball=None, blur=degrade.BLUR_DEFAULT):
     """(gt codes, labeler input, graded mask) for one game: reference labels, the tracking the
-    labeler sees (ball blurred like an automatic tracker, then hidden in live play, if asked) and
-    which frames are scored. blur is a key of degrade.BLUR."""
+    labeler sees (ball blurred like an automatic tracker, then hidden in live play, if asked;
+    players given tracker-like position error) and which frames are scored. blur is a tracker
+    level, a key of degrade.BLUR / degrade.PLAYER_ERROR."""
     gt, half_blocks, kickoffs = reference(game)
     tracking = dict(game["tracking"], half_blocks=half_blocks, kickoffs=kickoffs,
                     fps=game["fps"], pitch=game["pitch"])
@@ -46,6 +47,9 @@ def setup(game, hide_ball=None, blur=degrade.BLUR_DEFAULT):
         live = (gt == "H") | (gt == "A")
         tracking["ball"], _ = degrade.hide_ball(tracking["ball"], tracking["players"], live,
                                                 hide_ball)
+    if degrade.PLAYER_ERROR.get(blur, 0.0) > 0:          # 6.7: automatic-tracker player error
+        tracking["players"] = degrade.jitter_players(tracking["players"],
+                                                     degrade.PLAYER_ERROR[blur])
     return pm.label_codes(gt), tracking, graded
 
 

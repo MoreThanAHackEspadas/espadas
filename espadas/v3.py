@@ -16,26 +16,26 @@ from . import config, prep, touches, v1, v2
 
 HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 
-# Re-tuned (6.6) with tools/tune.py --labeler v3 on Metrica 1 and 3 over light/medium/heavy ball
-# blur (degrade.BLUR), ball hidden on 25% of live frames, with v2's fixed UNSEEN_THRESHOLD: mean
-# tuning spellF1 0.572 (0.613 with a tuned threshold on ball-less frames). On blurred balls tuning weights confirmed touches *below* plain ones (20 vs 30, switch
-# cost 60): in effect "two touches by the other team switch"; the CUSUM does the confirming.
-# Before blur (sharp Metrica corners only): tuning 0.681, held-out 0.653 vs v1 0.640, but on our
-# match only 11 touches per 90' were found (1,300-1,600 on Metrica), 199 possessions / 90'.
-# Held-out not re-scored yet. run.py keeps v1 as the default.
+# Re-tuned (5 Nov, checklist 6.7) with tools/tune.py --labeler v3 --skip-heldout on Metrica 1 and 3
+# over the four tracker levels (degrade.TRACKER_LEVELS: ball blur incl. the new "smooth" level,
+# plus player position error), ball hidden on 25% of live frames, evidence models refitted on
+# the same bench: mean tuning spellF1 0.5386 (v1 0.4839); 0.553 / 0.525 at 15% / 35% missing.
+# 6.6 history: tuned on light/medium/heavy only, 0.572; before blur 0.681, held-out 0.653.
+# Tuning still weights a plain touch (30) above a confirmed one (20): two touches by the other
+# team switch; the CUSUM does the confirming. Held-out not re-scored. run.py keeps v1.
 PARAMS = dict(v2.PARAMS, **{
-    "dead_smooth": 6,
-    "dead_threshold": 0.5,
+    "dead_smooth": 0,
+    "dead_threshold": 1.0,
     "min_dead": 50,
     "min_alive": 25,
-    "team_cap": 1.0,
+    "team_cap": 2.0,
     "switch_cost": 60.0,
-    "kink_half": 4,          # frames each side over which the velocity change is measured
-    "kink_threshold": 5.0,   # m/s velocity change for a touch
+    "kink_half": 6,          # frames each side over which the velocity change is measured
+    "kink_threshold": 3.0,   # m/s velocity change for a touch
     "touch_reach": 1.5,      # m; nearest player must be this close at a touch
-    "chain_gap": 12,         # frames; same-team next touch within this confirms control
-    "hold_reach": 1.5,       # m
-    "hold_frames": 38,       # frames the same player must stay with the ball (0 = off)
+    "chain_gap": 25,         # frames; same-team next touch within this confirms control
+    "hold_reach": 3.0,       # m
+    "hold_frames": 50,       # frames the same player must stay with the ball (0 = off)
     "confirm_weight": 20.0,  # pulse for a confirmed touch
     "touch_weight": 30.0,    # pulse for any other touch
 })
@@ -45,9 +45,9 @@ GRID = dict(v2.GRID, min_dead=[0, 25, 50, 100, 150, 200, 250, 350], **{
     "switch_cost": [20.0, 30.0, 45.0, 60.0, 90.0, 120.0],
     "kink_half": list(touches.KINK_HALVES),
     "kink_threshold": [1.0, 1.5, 2.0, 3.0, 5.0, 8.0],
-    "touch_reach": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
+    "touch_reach": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0],
     "chain_gap": [6, 12, 25, 50, 100, 150],
-    "hold_reach": [1.0, 1.5, 2.0],
+    "hold_reach": [1.0, 1.5, 2.0, 3.0],
     "hold_frames": [0, 12, 25, 38, 50],
     "confirm_weight": [20.0, 30.0, 45.0, 60.0, 90.0, 120.0],
     "touch_weight": [0.0, 3.0, 10.0, 20.0, 30.0],

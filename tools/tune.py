@@ -28,7 +28,7 @@ from espadas.external import bench, degrade  # noqa: E402
 
 HIDE_BALL = degrade.LIVE_MISSING
 ROBUSTNESS = (0.15, 0.35)
-OBJECTIVE_BLURS = ("light", "medium", "heavy")
+OBJECTIVE_BLURS = degrade.TRACKER_LEVELS   # light, medium, heavy, smooth (6.6, 6.7)
 MAX_SWEEPS = 4
 
 

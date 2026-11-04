@@ -27,10 +27,12 @@ ball (loose(T) -> ctrl(other)) than as a direct ctrl(T) -> ctrl(other) tackle.
 - Touches (Phase 6, touches.py): a confirmed touch by team T favours T-ctrl by `w_confirm` and
   rules out the other team (both its states lose `w_confirm`). Any other touch by T counts
   against the other team's *ctrl* state (`w_touch`: someone in T touched it, so the other team
-  is not in control) and gives T's own states a small `w_touch_own` credit. A lone touch (a
-  deflection, a block) cannot switch possession on its own: with the tuned values
-  w_touch + w_touch_own (15) stays below the turnover cost (20). When control by T does follow,
-  the credit dates the switch back to T's first touch.
+  is not in control) and gives T's own states a `w_touch_own` credit. Whether a lone touch can
+  switch possession on its own is a tuning outcome: only if w_touch + w_touch_own stays below the
+  turnover cost does a lone touch never switch. The 6.7 re-tune chose 10 + 20 > 20, so (like v3,
+  checklist 6.5) one clear touch by the other team is enough. On the bench a "lone" detected
+  touch is often a real interception whose follow-up touch was not seen; capping the credit at 5
+  costs 0.007. Team decision pending (official rule: a touch without control is not a change).
 - Control vs loose, only when the ball is tracked: nearest player within `ctrl_reach` favours the
   ctrl states by `w_ctrl`; nobody within `loose_reach` favours the loose states by `w_loose`.
 - **A missing ball is no information**: no ball-based term is added on those frames, so the
@@ -58,39 +60,40 @@ STATE_LABEL = np.array(["H", "H", "A", "A", "D"], dtype="<U1")
 UNSEEN_DEAD_BIAS = 0.0     # decision (b): no dead bias on ball-less frames; fixed, never tuned
 NEG = -np.inf
 
-# Tuned (5 Nov) with tools/tune.py --labeler v4 --skip-heldout on Metrica 1 and 3 over light/
-# medium/heavy ball blur, ball hidden on 25% of live frames, three rounds (widened grids after the
-# first; duration clean-up added in the third). Mean tuning spellF1 0.5734 (v3 0.5717, v1 0.558);
-# per blur 0.579 / 0.578 / 0.564. At 15% / 35% live missing: 0.584 / 0.550 (v3 0.585 / 0.555),
-# so v4 is level with v3 rather than ahead, and drops a little faster as more ball goes missing.
+# Re-tuned (5 Nov, checklist 6.7) with tools/tune.py --labeler v4 --skip-heldout on Metrica 1
+# and 3 over the four tracker levels (degrade.TRACKER_LEVELS: light/medium/heavy/smooth ball blur
+# plus player position error), ball hidden on 25% of live frames, with evidence models refitted
+# on the same bench. Mean tuning spellF1 0.5439 (v3 0.5386, v1 0.4839); per level 0.585 / 0.552
+# / 0.497 / 0.542. At 15% / 35% live missing: 0.557 / 0.534 (v3 0.553 / 0.525). Before 6.7 (no
+# player error, no smooth level): 0.5734 vs v3 0.5717 -- not comparable, the bench is harder now.
 # Held-out Game 2 not scored: done once at selection (Phase 9). run.py keeps v1 as the default.
 PARAMS = {
     "dead_smooth": 0,
-    "dead_bias": 1.0,        # log-odds, frames with a ball only
-    "w_dead": 4.0,
-    "team_cap": 2.0,
+    "dead_bias": 0.5,        # log-odds, frames with a ball only
+    "w_dead": 16.0,
+    "team_cap": 1.0,
     "w_team": 1.0,
     "loose_scale": 0.0,
     "w_confirm": 20.0,
     "w_touch": 10.0,
-    "w_touch_own": 5.0,      # credit to the toucher's own states for a lone touch
+    "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
     "w_ctrl": 1.0,
-    "w_loose": 0.2,
+    "w_loose": 0.5,
     "ctrl_reach": 5.0,       # m
-    "loose_reach": 2.0,      # m
-    "c_loose": 5.0,
+    "loose_reach": 5.0,      # m
+    "c_loose": 1.0,
     "c_turnover": 20.0,
-    "c_direct": 40.0,
-    "c_stop": 40.0,
-    "c_restart": 40.0,
-    "min_dead": 50,          # frames; shorter decoded dead spells go to the team around them
+    "c_direct": 20.0,
+    "c_stop": 160.0,
+    "c_restart": 20.0,
+    "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
     "min_alive": 0,          # frames; shorter live spells between two stoppages become dead
     "kink_half": 4,
-    "kink_threshold": 5.0,
+    "kink_threshold": 8.0,
     "touch_reach": 1.5,
-    "chain_gap": 100,
+    "chain_gap": 6,
     "hold_reach": 1.5,
-    "hold_frames": 25,
+    "hold_frames": 12,
 }
 
 GRID = {
@@ -116,7 +119,8 @@ GRID = {
     "min_alive": [0, 25, 50, 100, 150],
     "kink_half": list(touches.KINK_HALVES),
     "kink_threshold": [1.0, 1.5, 2.0, 3.0, 5.0, 8.0],
-    "touch_reach": [0.5, 1.0, 1.5, 2.0, 3.0],
+    "touch_reach": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
+    "hold_reach": [1.0, 1.5, 2.0, 3.0],
     "chain_gap": [6, 12, 25, 50, 100],
     "hold_frames": [0, 12, 25, 38, 50],
 }
