@@ -109,3 +109,29 @@ def test_ball_less_frames_use_fixed_threshold_not_the_tuned_one():
     p = {"dead_smooth": 0, "dead_threshold": -2.0, "min_dead": 25, "min_alive": 0}
     assert set(v2.decode(f, p)[100:300]) == {"H"}    # -1 < 0: motion says live, so live
     assert set(v2.decode(f, dict(p, unseen_threshold=None))[100:300]) == {"D"}
+
+
+CONTROL_NAMES = ["near_any", "near_any~6", "near_any~25", "near_any~75",
+                 "ball_speed", "ball_speed~6", "ball_speed~25", "ball_speed~75",
+                 "kink", "kink~6", "kink~25", "kink~75"]
+
+
+def test_control_design_names_and_finite():
+    names, x = evidence.control_design(evidence.clues(_match()))
+    assert names == CONTROL_NAMES and x.shape == (400, 12) and np.isfinite(x).all()
+
+
+def test_control_clues_are_nan_without_a_ball_and_log_odds_follow():
+    tracking = _match()
+    tracking["ball"][100:160] = np.nan
+    c = evidence.clues(tracking)
+    assert np.isnan(c["near_any"][100:160]).all() and np.isnan(c["kink"][100:160]).all()
+    model = {"names": CONTROL_NAMES, "bias": 0.0, "weights": [0.0] * 12}
+    lo = evidence.control_log_odds(c, model)
+    assert np.isnan(lo[100:160]).all() and np.isfinite(lo[:100]).all()
+
+
+def test_control_log_odds_refuses_mismatched_model():
+    with pytest.raises(RuntimeError):
+        evidence.control_log_odds(evidence.clues(_match()),
+                                  {"names": ["wrong"], "bias": 0.0, "weights": [0.0]})

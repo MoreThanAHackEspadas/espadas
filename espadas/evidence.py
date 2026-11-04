@@ -36,11 +36,17 @@ Not used, and why (checklist):
 external TUNING games only (Metrica 1 and 3, ball hidden on part of live play, degrade.py) and
 written to evidence_models.py as constants, so building our file needs no external data. Never
 fitted on our match.
+
+Control (Phase 7): a third family, "is the ball at a player's feet". Clues near_any (nearest
+player of either team to the ball) and kink (change of ball velocity, touches.kink); with the
+ball speed they feed control_design() and control_log_odds(), a logistic model fitted by
+tools/fit_evidence.py (CONTROL_MODEL). The design matrix has no NaN, but control_log_odds()
+returns NaN on frames without a ball.
 """
 
 import numpy as np
 
-from . import config, prep
+from . import config, prep, touches
 
 HOME, AWAY = 0, 1
 
@@ -50,7 +56,10 @@ NEAR_CLIP = 10.0            # m; distance differences are clipped to +/- this
 BALL_SPEED_CLIP = 30.0      # m/s
 BALL_VX_CLIP = 20.0         # m/s
 OUT_CLIP = 10.0             # m
-CONTEXT = (25, 75)          # frames each side for the smoothed copies of each clue (1 s, 3 s)
+CONTROL_KINK_HALF = 4       # frames; v3.PARAMS["kink_half"] (a number: v3 imports this module)
+KINK_CLIP = 20.0            # m/s
+CONTROL_CONTEXT = (6, 25, 75)   # frames each side for the control clues
+CONTEXT = (25, 75)        # frames each side for the smoothed copies of each clue (1 s, 3 s)
 
 # --------------------------------------------------------------------------- clue extraction
 
@@ -160,6 +169,11 @@ def clues(tracking):
     home_x = _nanmean_rows(players[:, team_of_slot == HOME, 0]) * attack[:, HOME]
     away_x = _nanmean_rows(players[:, team_of_slot == AWAY, 0]) * attack[:, AWAY]
 
+    with np.errstate(invalid="ignore"):
+        near_any = np.minimum(d_home, d_away)
+    near_any = np.where(np.isfinite(near_any) & present, near_any, np.nan)
+    kink = np.where(present, touches.kink(base["ball"], fps, CONTROL_KINK_HALF), np.nan)
+
     return {
         "half_blocks": half_blocks,
         "present": present,
@@ -182,6 +196,8 @@ def clues(tracking):
         - _spread(players[:, team_of_slot == AWAY]),
         # > 0: home moving up the pitch faster than away
         "advance": np.clip(_velocity(home_x, fps) - _velocity(away_x, fps), -10, 10),
+        "near_any": near_any,                          # m to the nearest player, either team
+        "kink": kink,                                  # m/s change of ball velocity, NaN unseen
     }
 
 
@@ -192,12 +208,12 @@ def _fill(x, value=0.0):
     return np.where(np.isfinite(x), x, value)
 
 
-def _with_context(columns):
-    """Each column, plus its smoothed copy at every CONTEXT width."""
+def _with_context(columns, widths=CONTEXT):
+    """Each column, plus its smoothed copy at every width."""
     out = []
     for name, x in columns:
         out.append((name, _fill(x)))
-        for w in CONTEXT:
+        for w in widths:
             out.append(("{}~{}".format(name, w), _fill(smooth(x, w))))
     return out
 
@@ -248,6 +264,18 @@ def team_design(c):
         ("spread", c["spread"]),
         ("advance", c["advance"]),
     ])
+    names = [n for n, _ in columns]
+    return names, np.stack([x for _, x in columns], axis=1)
+
+
+def control_design(c):
+    """(names, matrix) for the ball-at-a-player's-feet model."""
+    with np.errstate(invalid="ignore"):
+        columns = _with_context([
+            ("near_any", np.clip(c["near_any"], 0.0, NEAR_CLIP)),
+            ("ball_speed", np.clip(c["ball_speed"], 0.0, BALL_SPEED_CLIP)),
+            ("kink", np.clip(c["kink"], 0.0, KINK_CLIP)),
+        ], CONTROL_CONTEXT)
     names = [n for n, _ in columns]
     return names, np.stack([x for _, x in columns], axis=1)
 
@@ -326,3 +354,25 @@ def _check(names, model):
     if list(model["names"]) != names:
         raise RuntimeError("evidence model was fitted on different clues; re-run "
                            "tools/fit_evidence.py")
+
+
+def _fitted_control():
+    """CONTROL_MODEL from evidence_models, or None if it has not been fitted yet."""
+    try:
+        from . import evidence_models
+    except ImportError:
+        return None
+    return getattr(evidence_models, "CONTROL_MODEL", None)
+
+
+def control_log_odds(c, model=None):
+    """Log-odds that the ball is at a player's feet, per frame; NaN where there is no ball."""
+    if model is None:
+        model = _fitted_control()
+    if model is None:
+        raise RuntimeError("control model not fitted: run tools/fit_evidence.py")
+    names, x = control_design(c)
+    _check(names, model)
+    out = np.asarray(apply_logistic(x, model["bias"], model["weights"]), dtype=float)
+    out[~c["present"]] = np.nan
+    return out
