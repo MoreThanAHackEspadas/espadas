@@ -4,14 +4,54 @@
 
 ## 1. Approach
 
+The file is produced by a pipeline that reads only the automatic tracking of the provided game
+and has no tuned number that was chosen on it:
+
+1. **Preprocessing.** Ball positions that jump faster than 40 m/s are dropped, gaps of up to 1 s
+   are filled, speeds are computed, and each team's attacking direction is read from the kick-off
+   formation of each half.
+2. **Per-frame evidence.** Two small logistic models turn tracking clues into a "ball is dead"
+   score and a "home has it" score for every frame. Dead-ball clues: ball speed and position (when
+   it is tracked), and how the players move (mean speed, share running, fastest player), which is
+   what tells a live ball gap from a stoppage when the ball is missing. Team clues, all written as
+   home-minus-away so the model has no home bias: nearest player to the ball and to where it was
+   last seen, ball direction against each team's attacking direction, which team is closing in on
+   the ball (usually the defender, pressing), team shape (the team with the ball spreads out: the
+   strongest single clue) and which team is moving up the pitch.
+3. **Touches.** Moments a player plays the ball, found in two ways: a bend in the ball's path
+   with a player within reach, and a change of who has the ball at their feet (the nearest player
+   within reach for a run of frames), which needs no bend. A touch followed by a same-team touch
+   or a hold is "confirmed" (control).
+4. **Sequence model.** The scores and touches of a whole half are decoded at once (below).
+5. **Output.** The organisers' pre-kick-off window is forced to `D`, ungraded frames are `X`, the
+   file is validated with the organisers' own checks and its SHA-256 is printed.
+
+**Why this, rather than something else.** We have no labels on the provided game and may not
+make any, the tuning data is two external matches from a different, much cleaner tracker, and
+the file must be reproducible. That ruled out a large learned model: with two games it would
+memorise the tuning tracker rather than learn possession. Instead each stage is small and
+checkable on its own (a clue is right or wrong on an external game), the parts of the official
+definition that are structural (a loose ball keeps its team, possession changes only through a
+loose ball, a restart is taken in control) are built into the model rather than learned, and
+only a few dozen weights and costs are tuned, on an external bench made deliberately harder than
+the tuning games. We kept a plain rule-based variant (`v1`: dead-ball rules plus a hysteresis
+switch on the nearest player) as a candidate throughout; it is simpler but collapses on
+realistic tracker noise, which is why the sequence model was built. We did not build our own
+ball detector on the video: the provided tracking already gives positions, the detector would
+have to be trained on external data only, and the time was better spent on transfer between
+trackers, which turned out to be the real problem (sections 3 and 5).
+
+_[Selection pending (10–12 Nov): the variant below is the one leading on the tuning games; the
+final choice is made once on the held-out game and recorded in `docs/selection.md`.]_
+
 ### Sequence model (`v4`, Phase 7)
 
 Each half is decoded as one sequence by a 5-state hidden Markov model: home in control, home
 loose (ball loose, home had it last), away in control, away loose, dead. A loose ball keeps the
 label of the last team in control, as the official rules say, so a deflection or block is not a
 change of possession. Per-frame evidence is the Phase 5 dead and home log-odds plus the Phase 6
-touches: a confirmed touch (pass chain or hold) favours that team in control, a lone touch only
-rules out the other team being in control. When the ball is not tracked, no ball-based evidence
+touches: a confirmed touch (pass chain or hold) favours that team in control; a lone touch counts
+against the other team being in control and mildly for the toucher's team. When the ball is not tracked, no ball-based evidence
 is used at all (no information), and on those frames the dead score keeps a fixed, untuned
 threshold (decision (b), section 2). Switching between states has a cost per kind of change
 (control to loose and back, turnover via a loose ball, stoppage, restart); a direct change from
