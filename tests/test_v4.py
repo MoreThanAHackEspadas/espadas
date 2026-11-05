@@ -189,3 +189,17 @@ def test_clean_up_fills_short_dead_and_short_live():
     assert set(out[43:45]) == {v4.D}                # 2-frame live blip between stoppages -> dead
     assert set(out[-5:]) == {v4.AC}                 # last live run is not between stoppages
     assert np.array_equal(v4.clean_up(s, 0, 0), s)
+
+
+def test_touch_modes_kink_carrier_and_both():
+    f = _f(team=1.0)
+    f["kinks"][2][50] = 10.0                          # one kink touch by slot 0 (home)
+    f["slot"][200:260] = 2                            # away slot 2 carries the ball 200-259
+    p = dict(v4.PARAMS, kink_half=2, kink_threshold=5.0, touch_reach=1.0,
+             carrier_reach=1.0, carrier_frames=12)
+    kink, _ = v4.touch_list(f, dict(p, touch_mode="kink"))
+    carry, _ = v4.touch_list(f, dict(p, touch_mode="carrier"))
+    both, _ = v4.touch_list(f, dict(p, touch_mode="both"))
+    assert list(kink["frame"]) == [50]
+    assert list(carry["frame"]) == [0, 200, 260]      # carrier changes: 0 -> 2 -> 0
+    assert list(both["frame"]) == [0, 50, 200, 260]

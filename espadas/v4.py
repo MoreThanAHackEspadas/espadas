@@ -81,33 +81,43 @@ START = np.array([0.0, NEG, 0.0, NEG, 0.0])   # a half starts in control or dead
 # 7.11b (PR #3's duration-based transitions): with tuned weights on the evidence the "expected
 # lengths" would only relabel these costs; the one new freedom, a separate cost for regaining a
 # loose ball vs losing it, gained nothing (best 0.5412 vs 0.5410), so not added.
+# 6.7 touch gap (5 Nov): touches also from changes of the ball's carrier (touches.carrier), which
+# need no bend in the ball's path (our tracker's ball rarely bends: the kink detector found ~290
+# touches per 90' on our match vs ~1,800 on the bench). Re-tuned the same way for each source:
+# kink only 0.5410, carrier only 0.5405, **both 0.5551** (+0.014; 15% / 35%: 0.565 / 0.538; per
+# level 0.590 / 0.581 / 0.504 / 0.547, ahead at every level). kink_half 10 checked against 16 / 25
+# (0.551 / 0.540): a real peak. With hold_frames 0 a touch is confirmed only by a same-team next
+# touch within chain_gap.
 # Held-out Game 2 not scored: done once at selection (Phase 9). run.py keeps v1 as the default.
 PARAMS = {
     "dead_smooth": 0,
-    "dead_bias": 1.0,        # log-odds, frames with a ball only
+    "dead_bias": 2.0,        # log-odds, frames with a ball only
     "w_dead": 16.0,
-    "team_cap": 2.0,
+    "team_cap": 1.0,
     "w_team": 1.0,
     "loose_scale": 0.0,
-    "w_confirm": 20.0,
+    "w_confirm": 5.0,
     "w_touch": 5.0,
     "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
     "w_ctrl": 1.0,
     "w_loose": 0.5,
     "ctrl_reach": 5.0,       # m
-    "loose_reach": 3.0,      # m
-    "c_loose": 1.0,
+    "loose_reach": 2.0,      # m
+    "c_loose": 2.0,
     "c_turnover": 20.0,
     "c_stop": 160.0,
     "c_restart": 160.0,
     "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
     "min_alive": 0,          # frames; shorter live spells between two stoppages become dead
-    "kink_half": 4,
+    "kink_half": 10,
     "kink_threshold": 8.0,
-    "touch_reach": 1.5,
-    "chain_gap": 6,
-    "hold_reach": 3.0,
-    "hold_frames": 12,
+    "touch_reach": 3.0,
+    "chain_gap": 25,
+    "hold_reach": 1.0,
+    "hold_frames": 0,
+    "touch_mode": "both",    # 6.7: kink touches + carrier touches (touches.carrier)
+    "carrier_reach": 2.0,    # m; nearest player this close = the ball's carrier
+    "carrier_frames": 12,    # frames a carrier spell must last to count
 }
 
 GRID = {
@@ -136,6 +146,8 @@ GRID = {
     "hold_reach": [1.0, 1.5, 2.0, 3.0],
     "chain_gap": [6, 12, 25, 50, 100],
     "hold_frames": [0, 12, 25, 38, 50],
+    "carrier_reach": [1.0, 1.5, 2.0, 2.5, 3.5],
+    "carrier_frames": [3, 6, 12, 25, 50],
 }
 
 
@@ -158,9 +170,18 @@ def transitions(p):
 
 
 def touch_list(f, p):
-    """Detected touches (touches.detect dict) and their confirmed flags."""
-    t = touches.detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"], f["team_of_slot"],
-                       p["kink_threshold"], p["touch_reach"])
+    """Detected touches (touches.detect dict) and their confirmed flags. p["touch_mode"]:
+    "kink" (ball path bends, Phase 6), "carrier" (change of who has the ball at their feet, 6.7)
+    or "both"."""
+    mode = p.get("touch_mode", "kink")
+    kink = touches.detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"],
+                          f["team_of_slot"], p["kink_threshold"], p["touch_reach"])
+    if mode == "kink":
+        t = kink
+    else:
+        carry = touches.carrier(f["near"], f["slot"], f["present"], f["team_of_slot"],
+                                p.get("carrier_reach", 2.5), int(p.get("carrier_frames", 6)))
+        t = carry if mode == "carrier" else touches.merge(kink, carry)
     ok = touches.confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"],
                            int(p["hold_frames"]))
     return t, ok

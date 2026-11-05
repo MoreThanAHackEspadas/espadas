@@ -92,6 +92,64 @@ def detect(k, near, slot, team_of_slot, kink_threshold=3.0, touch_reach=2.0):
             "strength": k[frames]}
 
 
+def carrier(near, slot, present, team_of_slot, reach=2.5, min_frames=6):
+    """Touches from changes of *who has the ball at their feet* (checklist 6.7), not from the
+    ball's path.
+
+    A frame's carrier is the nearest tracked player if the ball is tracked and that player is
+    within `reach`. A carrier spell is a run of frames with the same carrier, at least
+    `min_frames` long; a touch is the first frame of a spell whose carrier differs from the
+    previous spell's. strength = the spell's length in frames.
+
+    Why: the kink detector needs the ball's path to bend at a kick. The Metrica ball is drawn as
+    straight lines, so every kick is a sharp corner, but our tracker's ball rarely bends: with
+    the kink detector we found ~290 touches per 90' on our match vs ~1,800 on the blurred bench.
+    Carrier changes need no bend; on Metrica 1 (reach 2.5 m, 6 frames) they give 1,200-1,360
+    touches per 90' across the four tracker levels and 1,295 on our match. Their team is
+    noisier under player position error (right ~70% on light/medium, ~50% on heavy/smooth), so
+    the decoder's confirmation and switching costs have to absorb that.
+    """
+    c = np.where(np.asarray(present, dtype=bool) & (near <= reach), slot, -1)
+    if len(c) == 0:
+        empty = np.zeros(0, dtype=np.int64)
+        return {"frame": empty, "slot": empty, "team": empty.astype(np.int8),
+                "strength": np.zeros(0)}
+    edges = np.flatnonzero(np.diff(c) != 0) + 1
+    starts = np.concatenate(([0], edges))
+    stops = np.concatenate((edges, [len(c)]))
+    frames, slots, lengths = [], [], []
+    last = -1
+    for a, b in zip(starts, stops):
+        who = int(c[a])
+        if who < 0 or b - a < min_frames:
+            continue
+        if who != last:
+            frames.append(int(a))
+            slots.append(who)
+            lengths.append(float(b - a))
+        last = who
+    frames = np.array(frames, dtype=np.int64)
+    slots = np.array(slots, dtype=np.int64)
+    return {"frame": frames, "slot": slots,
+            "team": np.asarray(team_of_slot, dtype=np.int8)[slots],
+            "strength": np.array(lengths)}
+
+
+def merge(a, b):
+    """Touches from two detectors in time order; a touch of `b` within MIN_SEPARATION frames of
+    one of `a` is dropped (same touch seen twice)."""
+    keep = np.ones(len(b["frame"]), dtype=bool)
+    if len(a["frame"]):
+        j = np.searchsorted(a["frame"], b["frame"])
+        for i, (f, x) in enumerate(zip(b["frame"], j)):
+            for q in (x - 1, x):
+                if 0 <= q < len(a["frame"]) and abs(int(a["frame"][q]) - int(f)) < MIN_SEPARATION:
+                    keep[i] = False
+    out = {k: np.concatenate([a[k], b[k][keep]]) for k in ("frame", "slot", "team", "strength")}
+    order = np.argsort(out["frame"], kind="stable")
+    return {k: v[order] for k, v in out.items()}
+
+
 def pulses(n, t, ok, confirm_weight, touch_weight):
     """Home-positive evidence per frame from touches: confirm_weight at confirmed touches,
     touch_weight at the others, signed by the touching team."""

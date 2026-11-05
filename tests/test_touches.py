@@ -92,3 +92,25 @@ def test_blur_ball_softens_corners_keeps_gaps_and_is_deterministic():
     assert soft < 0.7 * sharp
     a = degrade.blur_ball(ball, 4.0, 0.05)
     assert np.array_equal(a, degrade.blur_ball(ball, 4.0, 0.05), equal_nan=True)
+
+
+def test_carrier_touches_from_change_of_who_has_the_ball():
+    n = 100
+    near = np.full(n, 0.5)
+    slot = np.array([0] * 30 + [1] * 2 + [0] * 8 + [2] * 40 + [2] * 20)
+    present = np.ones(n, bool)
+    present[85:90] = False                         # a gap inside slot 2's spell
+    t = touches.carrier(near, slot, present, TEAMS, reach=1.0, min_frames=6)
+    assert list(t["frame"]) == [0, 40]             # 2-frame blip ignored; gap does not re-touch
+    assert list(t["team"]) == [0, 1]
+    far = touches.carrier(np.full(n, 5.0), slot, present, TEAMS, reach=1.0, min_frames=6)
+    assert len(far["frame"]) == 0                  # nobody close enough: no carrier
+
+
+def test_merge_keeps_time_order_and_drops_duplicates():
+    a = {"frame": np.array([10, 50]), "slot": np.array([0, 2]),
+         "team": np.array([0, 1], np.int8), "strength": np.ones(2)}
+    b = {"frame": np.array([12, 30]), "slot": np.array([0, 1]),
+         "team": np.array([0, 0], np.int8), "strength": np.ones(2)}
+    m = touches.merge(a, b)
+    assert list(m["frame"]) == [10, 30, 50]         # 12 is the same touch as 10
