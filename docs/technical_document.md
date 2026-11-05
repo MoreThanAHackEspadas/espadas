@@ -14,7 +14,9 @@ touches: a confirmed touch (pass chain or hold) favours that team in control, a 
 rules out the other team being in control. When the ball is not tracked, no ball-based evidence
 is used at all (no information), and on those frames the dead score keeps a fixed, untuned
 threshold (decision (b), section 2). Switching between states has a cost per kind of change
-(turnover via a loose ball, direct tackle, stoppage, restart). Viterbi finds the single best
+(control to loose and back, turnover via a loose ball, stoppage, restart); a direct change from
+one team's control to the other's is ruled out, so every change of possession passes through a
+loose ball, and a restart is always taken in control. Viterbi finds the single best
 labelling of the half, so a change of possession is placed where its evidence starts. All
 weights and costs are tuned on the external tuning games only.
 
@@ -32,6 +34,18 @@ weights and costs are tuned on the external tuning games only.
   evidence we can measure on external games.
 - **Number of tracked objects.** Always 22 in the external games, so it cannot be tested or
   tuned either. Same reasoning.
+
+**Tried, then dropped:**
+- **A learned "ball at a player's feet" (control vs loose) score** (reviewed 6 Nov). A logistic
+  model fitted on the external games, with control/loose reference frames derived by code from
+  the event data (a pass is loose from the kick to the reception, a shot until it ends, a header
+  or clearance until the other team acts). Its clues were the distance to the nearest player, the
+  ball speed and the bend in the ball's path. The bend clue does not carry over to our match: the
+  automatic tracker smooths the ball, so its path rarely bends (the same reason touches are also
+  detected from changes of the ball's carrier, section 1). The distance clue is already in `v4`
+  as a tuned rule (nearest player within reach favours control, nobody within reach favours
+  loose), and on the external bench the learned score tied the rule. The control/loose split is
+  internal to the model and never graded, so we kept the simpler rule.
 
 ## 3. Training and tuning data
 
