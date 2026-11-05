@@ -98,6 +98,8 @@ the repository). Each game is a full match: tracking of all 22 players and the b
 format, Game 3 in the EPTS format) plus the event data as published by Metrica Sports. The events
 were produced by the data provider, not by us; we use them only to derive per-frame reference
 labels **by code** (section 4), so no human-made label of ours exists anywhere in the pipeline.
+The rules were reviewed against Metrica's event definitions and the data
+(`docs/events_rules_review.md`); their known limits are listed in section 5.
 **Rights:** written permission to use the sample games for this entry, received from
 [who, date, channel — to be filled in; quote the key sentence here], with the source credited
 here and in the repository and no redistribution of the data.
@@ -137,9 +139,10 @@ restart has a clear possessor; a dead ball is `D` and never a possession.
 not tuned), mapped onto Metrica's event types:
 - *Control events:* set piece, pass, carry, shot and ball-lost, unless the subtype says header or
   clearance (a single touch). A ball-lost implies the team had the ball first.
-- *Touch-only events:* recovery, challenge, headers and clearances. They never change possession
-  on their own; if the same team follows with a control event before the other team does
-  anything in play, the change is dated back to the first of those touches (when the ball was won).
+- *Touch-only events:* recovery, headers and clearances (challenge events are not used). They
+  never change possession on their own; if the same team follows with a control event before the
+  other team does anything in play, the change is dated back to the first of those touches (when
+  the ball was won).
 - *Dead ball* starts when the ball leaves the pitch, at a shot that goes out or in, at the whistle
   for a foul, or at an offside or handball call, and ends at the next control event (the restart).
 - Each half is graded from its kick-off to its last event; everything else is `X`, as in the
@@ -200,6 +203,14 @@ stays with the last team; after a stoppage, whoever dominates the first second.]
   seventh of its tuning gain, so some settings are overfitted. Who has the ball is the bottleneck,
   not stoppages: on the practice games perfect team calls would lift spellF1 to about 0.86,
   perfect stoppage calls only to about 0.65.
+- **Reference labels.** The H/A/D reference on the external games comes from the provider's
+  events through fixed rules. A review of those rules (`docs/events_rules_review.md`) found two
+  things we chose to document rather than change before selection: referee stoppages that
+  Metrica tags `BALL LOST-FORCED` stay labelled live until the free kick (5–9 per game, about
+  1.5–2% of frames, so the labelers were tuned to call some such stoppages live), and the two
+  tuning games are annotated with different conventions (Game 3's carry events make every
+  recovery an immediate change of possession: 377 against 268 possessions per 90 minutes), so
+  the tuning averages over two readings of "controlled possession".
 - **Abstention is off.** Abstaining on long ball-less gaps inside a spell raised macroF1 by 0.028
   on the bench, but 89% of those frames were Metrica's ball-less stoppages, the pattern we decided
   not to rely on, so the gain may not transfer. spellF1 is unaffected either way.

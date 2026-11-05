@@ -87,3 +87,9 @@ play but only `BALL LOST-OFFSIDE` is handled, so up to 40 s is labelled live. Ne
    as known limits of the reference labels. Zero risk to the schedule; the reference stays
    ~1.5–2% too "live", and the Game 1 / Game 3 convention gap stays.
 3. Option 2 now, and revisit issue 2 only if the selection result is close.
+
+## Decision
+
+6 Nov 2026: **option 2, document only.** The rules stay as they are until after selection;
+issues 1–4 are noted in the technical document (sections 3–5). The `CHALLENGE` sentence in the
+module docstring is still inaccurate (issue 3); the tech doc describes what the code does.
