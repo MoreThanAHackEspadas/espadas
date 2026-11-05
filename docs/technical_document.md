@@ -20,6 +20,19 @@ weights and costs are tuned on the external tuning games only.
 
 ## 2. Assets used (and tried, then dropped)
 
+**Used:** the automatic tracking data (players and ball) and the match-level frame layout
+(halves, kick-offs, the forced-`D` window).
+
+**Not used, by team decision (5 Nov):**
+- **Smart Tagging.** The automatic phase and set-piece tags look useful (a set piece means the
+  ball is dead, then the tagged team restarts), but they are approximate, a defensive phase
+  names the defending team, throw-ins have no team, and none of our external games have Smart
+  Tagging. Any rule or weight for it could not be tested or tuned on external data, and checking
+  it against our own match would mean letting the provided game choose a setting. We use only
+  evidence we can measure on external games.
+- **Number of tracked objects.** Always 22 in the external games, so it cannot be tested or
+  tuned either. Same reasoning.
+
 ## 3. Training and tuning data
 
 Every external dataset: source, licence or written permission, who produced the labels and how,

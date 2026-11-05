@@ -23,6 +23,9 @@ HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 # 6.6 history: tuned on light/medium/heavy only, 0.572; before blur 0.681, held-out 0.653.
 # Tuning still weights a plain touch (30) above a confirmed one (20): two touches by the other
 # team switch; the CUSUM does the confirming. Held-out not re-scored. run.py keeps v1.
+# 6.7b (5 Nov): carrier touches tried, each mode fully re-tuned the same way: kink 0.5386,
+# both 0.5388, carrier 0.5362. No gain (v4 gained +0.014): the CUSUM adds every touch as a
+# pulse, so the noisier carrier team calls cancel out what they add. v3 stays on "kink".
 PARAMS = dict(v2.PARAMS, **{
     "dead_smooth": 0,
     "dead_threshold": 1.0,
@@ -38,6 +41,9 @@ PARAMS = dict(v2.PARAMS, **{
     "hold_frames": 50,       # frames the same player must stay with the ball (0 = off)
     "confirm_weight": 20.0,  # pulse for a confirmed touch
     "touch_weight": 30.0,    # pulse for any other touch
+    "touch_mode": "kink",    # kink / carrier / both (touches.from_features, 6.7)
+    "carrier_reach": 2.5,    # m; carrier touches only
+    "carrier_frames": 6,     # frames the new carrier must keep the ball
 })
 
 GRID = dict(v2.GRID, min_dead=[0, 25, 50, 100, 150, 200, 250, 350], **{
@@ -51,6 +57,8 @@ GRID = dict(v2.GRID, min_dead=[0, 25, 50, 100, 150, 200, 250, 350], **{
     "hold_frames": [0, 12, 25, 38, 50],
     "confirm_weight": [20.0, 30.0, 45.0, 60.0, 90.0, 120.0],
     "touch_weight": [0.0, 3.0, 10.0, 20.0, 30.0],
+    "carrier_reach": [1.0, 1.5, 2.0, 2.5, 3.5],
+    "carrier_frames": [3, 6, 12, 25, 50],
 })
 
 
@@ -67,10 +75,7 @@ def features(tracking):
 
 
 def touch_signal(f, p):
-    t = touches.detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"], f["team_of_slot"],
-                       p["kink_threshold"], p["touch_reach"])
-    ok = touches.confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"],
-                           int(p["hold_frames"]))
+    t, ok = touches.from_features(f, p)
     return touches.pulses(len(f["near"]), t, ok, p["confirm_weight"], p["touch_weight"])
 
 

@@ -30,7 +30,7 @@ model has no intercept, so it has no built-in home bias)
 Not used, and why (checklist):
 - 5.4 number of tracked objects: always 22 in the external games, so its effect cannot be
   measured or tuned there.
-- 5.5 / 5.9 Smart Tagging: the external games have none, same problem. Team decision pending.
+- 5.5 / 5.9 Smart Tagging: the external games have none, same problem. Team decision (5 Nov): not used.
 
 5.10 Combining: two logistic models over the clues, fitted by tools/fit_evidence.py on the
 external TUNING games only (Metrica 1 and 3, ball hidden on part of live play, degrade.py) and

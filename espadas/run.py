@@ -13,7 +13,7 @@ import sys
 
 import numpy as np
 
-from . import atd, config, labelers, write
+from . import abstain, atd, config, labelers, v2, write
 
 
 def main(argv=None):
@@ -26,6 +26,8 @@ def main(argv=None):
                         help="skip finalise() (no forced D window, no X on ungraded frames); "
                              "useful for comparing against the organisers' baseline files")
     parser.add_argument("--no-cache", action="store_true", help="re-parse tracking from scratch")
+    parser.add_argument("--abstain", action="store_true",
+                        help="X policy on graded frames (abstain.py, Phase 8.4; off by default)")
     args = parser.parse_args(argv)
 
     config.seed_everything()
@@ -33,6 +35,10 @@ def main(argv=None):
     labels = labelers.LABELERS[args.labeler](tracking)
     if not args.raw:
         labels = write.finalise(labels)
+    if args.abstain:
+        f = v2.features(tracking)
+        labels = abstain.apply(labels, f["present"], f["team_lo"],
+                               abstain.PARAMS.get(args.labeler))
 
     path = write.write_csv(args.out, labels)
     reason = write.validate(path)

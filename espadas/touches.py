@@ -178,3 +178,20 @@ def confirmed(t, dist, chain_gap=100, hold_reach=1.5, hold_frames=38):
         elif hold_frames > 0 and held(f, int(t["slot"][i]), dist, hold_reach, hold_frames):
             out[i] = True
     return out
+
+
+def from_features(f, p):
+    """Touches and their confirmed flags from a labeler's features (v3.features) and settings.
+    p["touch_mode"]: "kink" (ball path bends, Phase 6), "carrier" (change of who has the ball at
+    their feet, 6.7) or "both". Shared by v3 and v4."""
+    mode = p.get("touch_mode", "kink")
+    kinked = detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"], f["team_of_slot"],
+                    p["kink_threshold"], p["touch_reach"])
+    if mode == "kink":
+        t = kinked
+    else:
+        carry = carrier(f["near"], f["slot"], f["present"], f["team_of_slot"],
+                        p.get("carrier_reach", 2.5), int(p.get("carrier_frames", 6)))
+        t = carry if mode == "carrier" else merge(kinked, carry)
+    ok = confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"], int(p["hold_frames"]))
+    return t, ok

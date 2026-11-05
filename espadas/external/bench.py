@@ -15,7 +15,7 @@ import sys
 
 import numpy as np
 
-from .. import config, labelers
+from .. import abstain, config, labelers, v2
 from . import degrade
 from . import events as ev
 from . import metrica_csv, metrica_epts
@@ -59,9 +59,15 @@ def evaluate(gt_codes, labels, graded):
     return pm.evaluate(gt_codes, pm.label_codes(pred))
 
 
-def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT):
+def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT, use_abstain=False):
     gt_codes, tracking, graded = setup(game, hide_ball, blur)
-    return evaluate(gt_codes, labelers.LABELERS[labeler_name](tracking), graded)
+    labels = np.asarray(labelers.LABELERS[labeler_name](tracking), dtype="<U1").copy()
+    if use_abstain:                      # Phase 8.4, applied after the ungraded X as in run.py
+        labels[~graded] = "X"
+        f = v2.features(tracking)
+        labels = abstain.apply(labels, f["present"], f["team_lo"],
+                               abstain.PARAMS.get(labeler_name))
+    return evaluate(gt_codes, labels, graded)
 
 
 def available(numbers):
@@ -87,21 +93,24 @@ def main(argv=None):
     parser.add_argument("--blur", default=degrade.BLUR_DEFAULT, choices=list(degrade.BLUR),
                         help="ball blur level, like an automatic tracker (default {})".format(
                             degrade.BLUR_DEFAULT))
+    parser.add_argument("--abstain", action="store_true",
+                        help="apply the X policy (abstain.PARAMS) on graded frames")
     args = parser.parse_args(argv)
     config.seed_everything()
 
     games = available(args.games)
     print("ball blur {}, hidden to {} missing on live frames".format(
         args.blur, "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
-    print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}".format(
-        "labeler", "game", "split", "spellF1", "spell@.5", "macroF1", "n_pred", "n_gt"))
+    print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}{:>8}".format(
+        "labeler", "game", "split", "spellF1", "spell@.5", "macroF1", "n_pred", "n_gt", "n_X"))
     for name in args.labeler:
         for n, game in games:
-            r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None, args.blur)
+            r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None, args.blur,
+                      args.abstain)
             split = "tune" if n in TUNING else "HELDOUT"
-            print("{:<10}{:<10}{:<9}{:>9.4f}{:>10.4f}{:>9.4f}{:>8}{:>8}".format(
+            print("{:<10}{:<10}{:<9}{:>9.4f}{:>10.4f}{:>9.4f}{:>8}{:>8}{:>8}".format(
                 name, game["name"], split, r["spell_f1_mean"], r["spell_f1_at_headline"],
-                r["macro_f1"], r["n_pred_spells"], r["n_gt_spells"]))
+                r["macro_f1"], r["n_pred_spells"], r["n_gt_spells"], r["n_abstain_on_graded"]))
     return 0
 
 

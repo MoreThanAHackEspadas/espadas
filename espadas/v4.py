@@ -170,21 +170,9 @@ def transitions(p):
 
 
 def touch_list(f, p):
-    """Detected touches (touches.detect dict) and their confirmed flags. p["touch_mode"]:
-    "kink" (ball path bends, Phase 6), "carrier" (change of who has the ball at their feet, 6.7)
-    or "both"."""
-    mode = p.get("touch_mode", "kink")
-    kink = touches.detect(f["kinks"][int(p["kink_half"])], f["near"], f["slot"],
-                          f["team_of_slot"], p["kink_threshold"], p["touch_reach"])
-    if mode == "kink":
-        t = kink
-    else:
-        carry = touches.carrier(f["near"], f["slot"], f["present"], f["team_of_slot"],
-                                p.get("carrier_reach", 2.5), int(p.get("carrier_frames", 6)))
-        t = carry if mode == "carrier" else touches.merge(kink, carry)
-    ok = touches.confirmed(t, f["dist"], int(p["chain_gap"]), p["hold_reach"],
-                           int(p["hold_frames"]))
-    return t, ok
+    """Detected touches and their confirmed flags (touches.from_features; touch_mode kink /
+    carrier / both)."""
+    return touches.from_features(f, p)
 
 
 def emissions(f, p, first, stop, touch=None):
