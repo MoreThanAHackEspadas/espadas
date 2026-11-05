@@ -85,7 +85,7 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
 | `espadas/run.py` | the one command |
 | `espadas/external/` | external games: readers, events → reference labels, ball hiding, bench |
-| `tools/` | data guard, determinism check, CSV diff, Metrica download |
+| `tools/` | data guard, determinism check, CSV diff, Metrica download, tuning, the one-shot selection (`selection.py`) |
 | `third_party/mtah2027/` | official `games.py`, `possession_metrics.py`, `validate_submission.py` (MIT, Metrica Sports) |
 
 ## Documentation
@@ -115,6 +115,7 @@ python tools/fit_evidence.py                       # refit the Phase 5 evidence 
 python tools/tune.py --labeler v2                  # re-tune v2's decoding (prints PARAMS)
 python tools/tune.py --labeler v3                  # re-tune v3 (prints PARAMS)
 python tools/tune.py --labeler v4 --skip-heldout   # re-tune the 5-state model, Game 2 unseen
+python tools/selection.py --dry-run                # Phase 9: the one-shot held-out comparison; --smoke rehearses on the tuning games
 ```
 
 The Metrica games lose the ball almost only during stoppages, while ours also loses it in live
