@@ -29,7 +29,7 @@ ball (loose(T) -> ctrl(other)) than as a direct ctrl(T) -> ctrl(other) tackle.
   against the other team's *ctrl* state (`w_touch`: someone in T touched it, so the other team
   is not in control) and gives T's own states a `w_touch_own` credit. Whether a lone touch can
   switch possession on its own is a tuning outcome: only if w_touch + w_touch_own stays below the
-  turnover cost does a lone touch never switch. The 6.7 re-tune chose 10 + 20 > 20, so (like v3,
+  turnover cost does a lone touch never switch. The re-tunes chose w_touch + w_touch_own (5 + 20 after 7.11a) above c_turnover (20), so (like v3,
   checklist 6.5) one clear touch by the other team is enough. On the bench a "lone" detected
   touch is often a real interception whose follow-up touch was not seen; capping the credit at 5
   costs 0.007. Team decision pending (official rule: a touch without control is not a change).
@@ -40,9 +40,16 @@ ball (loose(T) -> ctrl(other)) than as a direct ctrl(T) -> ctrl(other) tackle.
 
 **Transitions** (per-frame costs; staying is free; anything not listed is impossible):
 ctrl <-> loose of the same team `c_loose`; loose(T) -> ctrl(other) `c_turnover`;
-ctrl(T) -> ctrl(other) `c_direct`; any live -> D `c_stop`; D -> any live `c_restart`.
+any live -> D `c_stop`; D -> ctrl of either team `c_restart`.
 
-Each half is decoded on its own with a free start; then an optional duration clean-up
+Two rules of the official definition are built into the structure (checklist 7.11a, idea from
+PR #3 by Nilay), so no setting can break them:
+- **Possession changes only through a loose ball.** ctrl(T) -> ctrl(other) is impossible; the
+  ball first goes loose (T-loose, still labelled T), then the other team wins it.
+- **A restart is taken by a team in control.** D -> loose is impossible, and a half never starts
+  loose (START).
+
+Each half is decoded on its own (START: control or dead, equal prior); then an optional duration clean-up
 (`min_dead`, `min_alive`, as in v1/v2) removes stoppages and live spells too short to be real. Frames outside the halves are D (finalise()
 and the bench turn them into X). Tracking only, no Smart Tagging. Settings tuned by
 tools/tune.py --labeler v4 --skip-heldout on Metrica 1 and 3 over light/medium/heavy ball blur;
@@ -59,6 +66,7 @@ N_STATES = 5
 STATE_LABEL = np.array(["H", "H", "A", "A", "D"], dtype="<U1")
 UNSEEN_DEAD_BIAS = 0.0     # decision (b): no dead bias on ball-less frames; fixed, never tuned
 NEG = -np.inf
+START = np.array([0.0, NEG, 0.0, NEG, 0.0])   # a half starts in control or dead, never loose
 
 # Re-tuned (5 Nov, checklist 6.7) with tools/tune.py --labeler v4 --skip-heldout on Metrica 1
 # and 3 over the four tracker levels (degrade.TRACKER_LEVELS: light/medium/heavy/smooth ball blur
@@ -66,33 +74,39 @@ NEG = -np.inf
 # on the same bench. Mean tuning spellF1 0.5439 (v3 0.5386, v1 0.4839); per level 0.585 / 0.552
 # / 0.497 / 0.542. At 15% / 35% live missing: 0.557 / 0.534 (v3 0.553 / 0.525). Before 6.7 (no
 # player error, no smooth level): 0.5734 vs v3 0.5717 -- not comparable, the bench is harder now.
+# 7.11a (5 Nov): with "possession changes only through a loose ball" and "restarts are taken in
+# control" built into the structure (c_direct removed), re-tuned the same way: mean 0.5410 (vs
+# 0.5439 without the rules), per level 0.588 / 0.552 / 0.489 / 0.535; 15% / 35%: 0.552 / 0.529.
+# A tie within noise with one setting fewer and the official rule enforced, so kept.
+# 7.11b (PR #3's duration-based transitions): with tuned weights on the evidence the "expected
+# lengths" would only relabel these costs; the one new freedom, a separate cost for regaining a
+# loose ball vs losing it, gained nothing (best 0.5412 vs 0.5410), so not added.
 # Held-out Game 2 not scored: done once at selection (Phase 9). run.py keeps v1 as the default.
 PARAMS = {
     "dead_smooth": 0,
-    "dead_bias": 0.5,        # log-odds, frames with a ball only
+    "dead_bias": 1.0,        # log-odds, frames with a ball only
     "w_dead": 16.0,
-    "team_cap": 1.0,
+    "team_cap": 2.0,
     "w_team": 1.0,
     "loose_scale": 0.0,
     "w_confirm": 20.0,
-    "w_touch": 10.0,
+    "w_touch": 5.0,
     "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
     "w_ctrl": 1.0,
     "w_loose": 0.5,
     "ctrl_reach": 5.0,       # m
-    "loose_reach": 5.0,      # m
+    "loose_reach": 3.0,      # m
     "c_loose": 1.0,
     "c_turnover": 20.0,
-    "c_direct": 20.0,
     "c_stop": 160.0,
-    "c_restart": 20.0,
+    "c_restart": 160.0,
     "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
     "min_alive": 0,          # frames; shorter live spells between two stoppages become dead
     "kink_half": 4,
     "kink_threshold": 8.0,
     "touch_reach": 1.5,
     "chain_gap": 6,
-    "hold_reach": 1.5,
+    "hold_reach": 3.0,
     "hold_frames": 12,
 }
 
@@ -112,7 +126,6 @@ GRID = {
     "loose_reach": [2.0, 3.0, 5.0, 8.0],
     "c_loose": [1.0, 2.0, 5.0, 10.0, 20.0],
     "c_turnover": [5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0],
-    "c_direct": [10.0, 20.0, 40.0, 60.0, 90.0, 120.0],
     "c_stop": [5.0, 10.0, 20.0, 30.0, 40.0, 60.0, 80.0, 160.0],
     "c_restart": [5.0, 10.0, 20.0, 30.0, 40.0, 60.0, 80.0, 160.0],
     "min_dead": [0, 25, 50, 75, 100, 150, 200],
@@ -138,10 +151,9 @@ def transitions(p):
     for ctrl, loose in ((HC, HL), (AC, AL)):
         t[ctrl, loose] = t[loose, ctrl] = -p["c_loose"]
     t[HL, AC] = t[AL, HC] = -p["c_turnover"]
-    t[HC, AC] = t[AC, HC] = -p["c_direct"]
     for s in (HC, HL, AC, AL):
         t[s, D] = -p["c_stop"]
-        t[D, s] = -p["c_restart"]
+    t[D, HC] = t[D, AC] = -p["c_restart"]
     return t
 
 
@@ -198,11 +210,13 @@ def emissions(f, p, first, stop, touch=None):
     return e
 
 
-def viterbi(emis, trans):
-    """Best state path (int8 per frame) for log-scores emis (n, S) and trans (S, S).
+def viterbi(emis, trans, start=None):
+    """Best state path (int8 per frame) for log-scores emis (n, S), trans (S, S) and optional
+    start log-scores (S,) (None = free start, equal prior).
 
-    Free start (equal prior). Ties go to the lowest state index, both between predecessors and
-    for the final state, so the answer is deterministic."""
+    Ties go to the lowest state index, both between predecessors and for the final state, so the
+    answer is deterministic. Pure Python on purpose: with 5 states it is faster than a NumPy step
+    per frame (measured 0.14 s vs 0.23 s per half)."""
     emis = np.asarray(emis, dtype=float)
     n, s = emis.shape
     if n == 0:
@@ -211,7 +225,8 @@ def viterbi(emis, trans):
     preds = [[(i, float(trans[i, j])) for i in range(s) if np.isfinite(trans[i, j])]
              for j in range(s)]
     rows = emis.tolist()
-    score = rows[0]
+    score = rows[0] if start is None else [a + b for a, b in zip(rows[0], np.asarray(start,
+                                                                                   float))]
     back = [None] * n
     states = range(s)
     for t in range(1, n):
@@ -258,7 +273,7 @@ def decode_states(f, params=None):
     out = np.full(len(f["present"]), -1, dtype=np.int8)
     for _, first, last in f["half_blocks"]:
         stop = last + 1
-        path = viterbi(emissions(f, p, first, stop, touch), trans)
+        path = viterbi(emissions(f, p, first, stop, touch), trans, START)
         out[first:stop] = clean_up(path, int(p["min_dead"]), int(p["min_alive"]))
     return out
 

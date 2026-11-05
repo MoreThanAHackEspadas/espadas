@@ -63,9 +63,11 @@ def test_flicker_ignored_and_sustained_switch_dated_back():
     f = _f(team=1.0)
     f["team_lo"][100:110] = -1.0                     # 10 frames of away evidence: a blip
     f["team_lo"][250:] = -1.0                        # away from 250 on
-    labels = v4.decode(f, dict(QUIET, c_direct=20.0, c_turnover=20.0))
-    assert set(labels[:250]) == {"H"}
-    assert set(labels[250:]) == {"A"}                 # switch exactly where the evidence starts
+    labels = v4.decode(f, dict(QUIET, c_turnover=20.0))
+    # The switch goes through one loose frame (250, still home's: a loose ball belongs to the
+    # last team in control), so away has it from 251, one frame after its evidence starts.
+    assert set(labels[:251]) == {"H"}
+    assert set(labels[251:]) == {"A"}
 
 
 def test_dead_stretch_and_teams():
@@ -104,7 +106,7 @@ def _loose_play(chain=True):
 
 LOOSE_P = dict(QUIET, kink_half=2, kink_threshold=5.0, touch_reach=1.0, chain_gap=25,
                hold_frames=0, w_confirm=60.0, w_touch=10.0, w_touch_own=5.0, c_turnover=20.0,
-               c_direct=40.0, c_loose=1.0, w_loose=0.5, min_dead=0)
+               c_loose=1.0, w_loose=0.5, min_dead=0)
 
 
 def test_lone_deflection_never_switches_possession():
@@ -144,6 +146,24 @@ def test_dead_bias_does_not_touch_ball_less_frames():
     a = v4.emissions(seen, dict(v4.PARAMS, dead_bias=-5.0), 0, 400)
     b = v4.emissions(seen, dict(v4.PARAMS, dead_bias=5.0), 0, 400)
     assert not np.allclose(a, b)
+
+
+def test_structure_possession_changes_only_through_loose_and_restarts_are_controlled():
+    t = v4.transitions(v4.PARAMS)
+    assert t[v4.HC, v4.AC] == -np.inf and t[v4.AC, v4.HC] == -np.inf   # no direct handover
+    assert np.isfinite(t[v4.HL, v4.AC]) and np.isfinite(t[v4.AL, v4.HC])
+    assert t[v4.D, v4.HL] == -np.inf and t[v4.D, v4.AL] == -np.inf     # restart in control
+    assert np.isfinite(t[v4.D, v4.HC]) and np.isfinite(t[v4.D, v4.AC])
+    emis = np.zeros((3, 5))
+    emis[:, [v4.HL, v4.AL]] = 5.0                     # loose evidence from the first frame
+    assert v4.viterbi(emis, t, v4.START)[0] not in (v4.HL, v4.AL)
+
+
+def test_viterbi_start_scores_shift_the_first_state():
+    emis = np.zeros((4, 2))
+    trans = np.zeros((2, 2))
+    assert v4.viterbi(emis, trans, np.array([-np.inf, 0.0]))[0] == 1
+    assert np.array_equal(v4.viterbi(emis, trans), v4.viterbi(emis, trans, np.zeros(2)))
 
 
 def test_transitions_forbid_loose_to_other_loose():
