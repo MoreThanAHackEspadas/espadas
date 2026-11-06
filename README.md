@@ -101,7 +101,7 @@ the ground truth or the provided video. External data lives outside this repo un
 
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
-| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | No formal licence; README: "be responsible with the use of this data", "acknowledge the source". Written confirmation requested from the organisers. | Tuning (Games 1, 3) and held-out comparison (Game 2) |
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Published openly by Metrica Sports for the analytics community; no formal licence file. Their README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning (Games 1, 3) and held-out comparison (Game 2) |
 
 Reference labels on external games are derived **by code** from each game's event data
 (`espadas/external/events.py`, rules documented there). No hand labels are used.

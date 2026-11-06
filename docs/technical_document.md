@@ -100,9 +100,13 @@ were produced by the data provider, not by us; we use them only to derive per-fr
 labels **by code** (section 4), so no human-made label of ours exists anywhere in the pipeline.
 The rules were reviewed against Metrica's event definitions and the data
 (`docs/events_rules_review.md`); their known limits are listed in section 5.
-**Rights:** written permission to use the sample games for this entry, received from
-[who, date, channel — to be filled in; quote the key sentence here], with the source credited
-here and in the repository and no redistribution of the data.
+**Rights:** Metrica Sports publishes these games openly, "to provide some sample data to play
+around with to the broader football analytics community". The repository's terms ("Legal
+stuff") ask users to "be responsible with the use of this data" and, for anything public, to
+"acknowledge the source". We acknowledge **Metrica Sports** as the source here and in the
+repository README. We do not redistribute the data: it is downloaded from Metrica's own
+repository (`metrica-sports/sample-data`) at a pinned commit and kept outside ours, and it is
+used only to fit and tune our settings.
 
 **Nothing from the provided game.** Nothing is fitted or tuned on the public five minutes, the
 private ground truth or the video (organisers' clarification, Nov 2026). The only things ever run
