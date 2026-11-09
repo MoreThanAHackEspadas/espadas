@@ -6,8 +6,8 @@
     python tools/selection.py               # THE one shot: score, print, write docs/selection.md
     python tools/selection.py --again       # a deliberate re-run: appends a new dated section
 
-Game 2 is held out: nothing was ever tuned on it. v1-v3 were scored on it during development on
-the earlier bench (checklist 4.10, 5, 6); it has not been scored on the current bench, and the
+Game 2 is held out: nothing was ever tuned on it. v0-v3 were scored on it during development on
+the earlier bench (checklist 4.10, 5, 6, 7.2); it has not been scored on the current bench, and the
 final comparison on it is scored ONCE, here, for the final candidates only. This tool is the only
 code that loads it by default (bench.available refuses it otherwise). It makes that one shot
 complete (every candidate, with and without the X policy, at every tracker level and
