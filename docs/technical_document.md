@@ -150,7 +150,9 @@ inform design choices, and we list them:
 it. It has been scored before, though. During development, on the earlier bench, the baseline
 `v0` and the labellers `v1`, `v2` and `v3` were scored on Game 2 (`v2` more than once, while it
 was being built), and one comparison there kept `v1` as the submission over `v2`; those scores
-are recorded in the code comments and the team checklist. The bench then changed (ball blur on
+are recorded in the code comments and the team checklist. The Phase 5 evidence models (fitted on
+Games 1 and 3 only) also had their per-frame accuracy reported on Game 2 during development: team
+0.89 (0.73 with the ball missing), dead 0.84. The bench then changed (ball blur on
 4 Nov, player position error and the smoothed level on 5 Nov), and Game 2 has not been scored on
 the current bench. The final comparison between variants on it is scored once, at selection
 (`tools/selection.py`, `docs/selection.md`). Everything with a number in it was fitted or tuned

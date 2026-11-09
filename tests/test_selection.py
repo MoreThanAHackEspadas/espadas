@@ -1,16 +1,31 @@
 """tools/selection.py: the one-shot held-out comparison (checklist 9.2 / 9.3).
 
-Every test here works on made-up scores. No external game is ever read.
+Every test here works on made-up scores. No external game is ever read. The canonical report
+(selection.REPORT, the lock) of every module load() returns is a temporary path, so no test can
+create docs/selection.md.
 """
 
 import importlib.util
 import os
+import subprocess
 
 import numpy as np
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REAL_REPORT = os.path.join(ROOT, "docs", "selection.md")
 LEVELS = ("light", "medium", "heavy", "smooth")
+CANONICAL = {}
+
+
+@pytest.fixture(autouse=True)
+def canonical_report(tmp_path):
+    """Every test's canonical report is a temp path, and the real one is never created."""
+    existed = os.path.exists(REAL_REPORT)
+    CANONICAL["path"] = str(tmp_path / "canonical" / "selection.md")
+    yield CANONICAL["path"]
+    CANONICAL.clear()
+    assert os.path.exists(REAL_REPORT) == existed
 
 
 def load():
@@ -18,6 +33,7 @@ def load():
         "selection_tool", os.path.join(ROOT, "tools", "selection.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.REPORT = CANONICAL["path"]           # never docs/selection.md
     return module
 
 
@@ -122,6 +138,61 @@ def test_reading_checks_that_x_leaves_spell_f1_unchanged():
     assert "unchanged" in text and "+0.030" in text
 
 
+def three_candidates(v4, v3, v1):
+    rows = two_candidates(v4, v3)
+    rows += [fake("v1", False, 2, 0.25, level, v1) for level in LEVELS]
+    return rows
+
+
+def first_line(s, rows):
+    return s.reading(s.summarise(rows, tuning=(1, 3), heldout=2), hide=0.25, levels=LEVELS)[0]
+
+
+def test_an_exact_tie_is_called_tied_not_a_lead_by_0_000():
+    s = load()
+    first = first_line(s, two_candidates(0.600, 0.600))
+    assert "tied" in first and "v3 and v4" in first
+    assert "Leader" not in first and "0.000" not in first
+    assert "v3 ahead at 0 of 4" in first and "v4 ahead at 0 of 4" in first
+    first = first_line(s, three_candidates(0.600, 0.600, 0.400))
+    assert "v3 and v4 tied" in first and "ahead of v1 by 0.200, above" in first
+
+
+def test_a_level_shared_at_the_top_is_not_counted_as_ahead():
+    s = load()
+    rows = []
+    for level in LEVELS:
+        rows.append(fake("v4", False, 2, 0.25, level, 0.58 if level == "smooth" else 0.60))
+        rows.append(fake("v3", False, 2, 0.25, level, 0.58))
+    first = first_line(s, rows)
+    assert first.startswith("Leader") and "ahead at 3 of 4 tracker levels (light, medium, heavy)" \
+        in first
+
+
+def test_reading_gives_the_leaders_margin_over_v1_against_the_spell_band():
+    s = load()
+    assert s.BASELINE == "v1"
+    first = first_line(s, three_candidates(0.600, 0.580, 0.500))
+    assert "ahead of v3 by 0.020, within" in first
+    assert "ahead of v1 (today's default) by 0.100, above the same band" in first
+    first = first_line(s, three_candidates(0.600, 0.580, 0.590))     # v1 is the runner-up
+    assert "ahead of v1 by 0.010, within" in first and first.count("v1") == 1
+    first = first_line(s, three_candidates(0.500, 0.550, 0.600))     # v1 leads
+    assert "today's default" not in first
+    assert "v1" not in first_line(s, two_candidates(0.600, 0.580))   # v1 not a candidate
+
+
+def test_the_overfit_line_says_may_and_that_the_games_differ():
+    s = load()
+    rows = two_candidates(0.600, 0.580)
+    rows += [fake(c, False, g, 0.25, level, 0.700) for c in ("v4", "v3") for g in (1, 3)
+             for level in LEVELS]
+    text = "\n".join(s.reading(s.summarise(rows, tuning=(1, 3), heldout=2), hide=0.25,
+                               levels=LEVELS))
+    assert "-0.100" in text and "may mean the settings are overfitted" in text
+    assert "differ in difficulty" in text and "means the settings are" not in text
+
+
 def test_render_has_the_summary_and_per_level_tables_and_the_provenance():
     s = load()
     results = []
@@ -183,6 +254,7 @@ def fake_bench(monkeypatch):
     monkeypatch.setattr(s.bench, "available", fake_available)
     monkeypatch.setattr(s.bench, "score", fake_score)
     monkeypatch.setattr(s, "provenance", lambda: dict(META))
+    monkeypatch.setattr(s, "tracked_changes", lambda: [])       # a clean checkout
     return s, state
 
 
@@ -214,7 +286,7 @@ def test_interrupted_before_heldout_leaves_no_lock(fake_bench, tmp_path):
     state["fail_on"], state["error"] = 1, RuntimeError
     with pytest.raises(RuntimeError):
         s.main(SMALL + ["--out", out])
-    assert not os.path.exists(out)
+    assert not os.path.exists(out) and not os.path.exists(s.REPORT)
     state["fail_on"] = None
     assert s.main(SMALL + ["--out", out]) == 0         # the one shot is still there
     assert os.path.exists(out)
@@ -238,6 +310,107 @@ def test_a_normal_run_writes_one_well_formed_report(fake_bench, tmp_path):
     assert s.main(SMALL + ["--out", out, "--again"]) == 0
     again = open(out).read()
     assert again.startswith(text) and again.count("## Selection run") == 2
+
+
+# --------------------------------------------------------------------------- the lock is REPORT
+
+def test_the_canonical_report_locks_whatever_out_says(fake_bench, tmp_path):
+    s, state = fake_bench
+    os.makedirs(os.path.dirname(s.REPORT))
+    with open(s.REPORT, "w") as handle:
+        handle.write("taken\n")
+    out = state["out"] = str(tmp_path / "elsewhere.md")
+    assert s.main(SMALL + ["--out", out]) == 1
+    assert state["loaded"] == 0 and not os.path.exists(out)       # refused before reading
+    assert open(s.REPORT).read() == "taken\n"
+
+
+def test_the_lock_is_the_canonical_report_when_out_points_elsewhere(fake_bench, tmp_path):
+    s, state = fake_bench
+    out = str(tmp_path / "elsewhere.md")
+    state["out"], state["fail_on"] = s.REPORT, 2       # lock_seen: did the canonical lock exist?
+    with pytest.raises(KeyboardInterrupt):
+        s.main(SMALL + ["--out", out])
+    assert [lock for game, lock in state["lock_seen"] if game == 2] == [True]
+    assert not any(lock for game, lock in state["lock_seen"] if game != 2)
+    assert "Run started" in open(s.REPORT).read() and "Run started" in open(out).read()
+
+
+def test_a_run_with_out_elsewhere_writes_the_same_report_to_both(fake_bench, tmp_path):
+    s, state = fake_bench
+    out = state["out"] = str(tmp_path / "elsewhere.md")
+    assert s.main(SMALL + ["--out", out]) == 0
+    text = open(s.REPORT).read()
+    assert text == open(out).read() and "### Reading" in text
+    fresh = str(tmp_path / "fresh.md")
+    state["loaded"] = 0
+    assert s.main(SMALL + ["--out", fresh]) == 1           # a new --out does not reopen the shot
+    assert state["loaded"] == 0 and not os.path.exists(fresh)
+
+
+def test_a_candidate_typo_fails_at_parsing_before_any_lock(fake_bench, tmp_path, capsys):
+    s, state = fake_bench
+    out = state["out"] = str(tmp_path / "selection.md")
+    with pytest.raises(SystemExit) as stop:
+        s.main(["--candidates", "v4", "v5", "--out", out])
+    assert stop.value.code == 2 and "invalid choice" in capsys.readouterr().err
+    assert state["loaded"] == 0 and not os.path.exists(out) and not os.path.exists(s.REPORT)
+
+
+# --------------------------------------------------------------------------- dirty working tree
+
+def test_a_real_run_refuses_uncommitted_tracked_changes_before_the_lock(fake_bench, tmp_path,
+                                                                        monkeypatch, capsys):
+    s, state = fake_bench
+    out = state["out"] = str(tmp_path / "selection.md")
+    monkeypatch.setattr(s, "tracked_changes", lambda: [" M espadas/v4.py"])
+    assert s.main(SMALL + ["--out", out]) == 1
+    printed = capsys.readouterr().out
+    assert "uncommitted changes" in printed and "espadas/v4.py" in printed
+    assert "--allow-dirty" in printed
+    assert state["loaded"] == 0 and not os.path.exists(out) and not os.path.exists(s.REPORT)
+    assert s.main(SMALL + ["--out", out, "--dry-run"]) == 0        # unaffected
+    assert s.main(SMALL + ["--out", out, "--smoke"]) == 0          # unaffected
+    assert not os.path.exists(out) and not os.path.exists(s.REPORT)
+    assert s.main(SMALL + ["--out", out, "--allow-dirty"]) == 0    # the explicit override
+    assert os.path.exists(out) and os.path.exists(s.REPORT)
+
+
+def test_a_real_run_refuses_when_git_cannot_say_whether_the_tree_is_clean(fake_bench, tmp_path,
+                                                                          monkeypatch):
+    s, state = fake_bench
+    out = state["out"] = str(tmp_path / "selection.md")
+    monkeypatch.setattr(s, "tracked_changes", lambda: None)
+    assert s.main(SMALL + ["--out", out]) == 1
+    assert state["loaded"] == 0 and not os.path.exists(s.REPORT)
+
+
+def test_tracked_changes_lists_tracked_files_only(tmp_path, monkeypatch):
+    s = load()
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "-c", "commit.gpgsign=false"] + list(args),
+                       cwd=str(repo), check=True, capture_output=True)
+
+    git("init", "-q")
+    (repo / "a.py").write_text("x = 1\n")
+    git("add", "a.py")
+    git("commit", "-q", "-m", "init")
+    monkeypatch.setattr(s, "ROOT", str(repo))
+    assert s.tracked_changes() == []
+    (repo / "scratch.txt").write_text("untracked\n")
+    assert s.tracked_changes() == []                     # untracked files do not block
+    (repo / "a.py").write_text("x = 2\n")
+    assert s.tracked_changes() == [" M a.py"]
+    git("add", "a.py")
+    assert s.tracked_changes() == ["M  a.py"]            # staged counts too
+    monkeypatch.setattr(s, "ROOT", str(tmp_path / "missing"))
+    assert s.tracked_changes() is None
 
 
 def test_score_one_forces_x_on_or_off_and_leaves_params_alone(monkeypatch):
@@ -306,7 +479,23 @@ def test_smoke_mode_scores_only_tuning_games_and_writes_no_report(monkeypatch, t
     out = str(tmp_path / "selection.md")
     assert s.main(["--smoke", "--candidates", "v4", "--levels", "light", "--out", out]) == 0
     assert asked["games"] == s.bench.TUNING
-    assert not os.path.exists(out)
+    assert not os.path.exists(out) and not os.path.exists(s.REPORT)
+
+
+def test_a_smoke_run_is_headed_as_a_rehearsal_not_a_game_2_selection(monkeypatch, capsys):
+    s = load()
+    monkeypatch.setattr(s.bench, "available",
+                        lambda numbers, heldout=False: [(n, {"n": n}) for n in numbers])
+    monkeypatch.setattr(s.bench, "score", lambda *a, **k: {
+        "spell_f1_mean": 0.5, "macro_f1": 0.8, "n_pred_spells": 1, "n_gt_spells": 1,
+        "n_abstain_on_graded": 0})
+    monkeypatch.setattr(s, "provenance", lambda: dict(META))
+    assert s.main(["--smoke", "--candidates", "v4", "--levels", "light", "--no-x"]) == 0
+    printed = capsys.readouterr().out
+    assert "## Smoke rehearsal on the tuning games (1 + 3) only, held-out Game 2 not scored: " \
+        "2026-11-11, commit `abc1234`" in printed
+    assert "## Selection run" not in printed
+    assert "scored on held-out" not in printed and "was not loaded or scored" in printed
 
 
 def test_only_the_real_run_asks_for_the_heldout_game(monkeypatch, tmp_path):
@@ -324,6 +513,7 @@ def test_only_the_real_run_asks_for_the_heldout_game(monkeypatch, tmp_path):
 
     monkeypatch.setattr(s.bench, "available", fake_available)
     monkeypatch.setattr(s.bench, "score", fake_score)
+    monkeypatch.setattr(s, "tracked_changes", lambda: [])
     out = str(tmp_path / "selection.md")
     small = ["--candidates", "v4", "--levels", "light", "--hides", "0.25", "--no-x", "--out", out]
     assert s.main(["--smoke"] + small) == 0

@@ -122,15 +122,17 @@ python tools/fetch_metrica.py                      # download, pinned to one com
 python -m espadas.external.bench --labeler v1 v3 v4  # score labelers on the tuning games (1 and 3)
 python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
 python tools/fit_evidence.py                       # refit the Phase 5 evidence models (writes evidence_models.py)
+#   ^ rewrites the tracked espadas/evidence_models.py: never run it between selection and the freeze
 python tools/tune.py --labeler v2                  # re-tune v2's decoding (prints PARAMS)
 python tools/tune.py --labeler v3                  # re-tune v3 (prints PARAMS)
 python tools/tune.py --labeler v4                  # re-tune the 5-state model (prints PARAMS)
 python tools/selection.py --dry-run                # Phase 9: the one-shot held-out comparison; --smoke rehearses on the tuning games
 ```
 
-**Game 2 is held out, in code.** Games are loaded only through `bench.available()`, which refuses
-the held-out game unless the caller opts in. Only a real run of `tools/selection.py` does that by
-default (once, at selection). `bench`, `tune.py`, `tune_v1.py`, `fit_evidence.py` and
+**Game 2 is held out, in code.** The game readers (`metrica_csv`, `metrica_epts`) and
+`bench.available()` refuse the held-out game unless the caller opts in (`heldout=True`), before
+any file is opened. Only a real run of `tools/selection.py` does that by default (once, at
+selection). `bench`, `tune.py`, `tune_v1.py`, `fit_evidence.py` and
 `self_consistency.py` work on Games 1 and 3 and touch Game 2 only with an explicit `--heldout`
 (`--skip-heldout` is still accepted and changes nothing).
 

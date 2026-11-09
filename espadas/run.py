@@ -19,13 +19,17 @@ import numpy as np
 
 from . import abstain, atd, config, labelers, v2, write
 
+# The labeler of the no-flag build, i.e. the submission. Changed only at the freeze (checklist
+# 11.1), together with tests/test_run.py::test_default_labeler_is_v1 and the README.
+DEFAULT_LABELER = "v1"
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Build the Team Espadas submission CSV.")
     parser.add_argument("--data-dir", help="data bundle root (default: $MTAH_DATA_DIR)")
     parser.add_argument("--out", default=os.path.join(config.REPO_ROOT, "out",
                                                       config.TEAM_NAME + ".csv"))
-    parser.add_argument("--labeler", default="v1", choices=sorted(labelers.LABELERS))
+    parser.add_argument("--labeler", default=DEFAULT_LABELER, choices=sorted(labelers.LABELERS))
     parser.add_argument("--raw", action="store_true",
                         help="skip finalise() (no forced D window, no X on ungraded frames); "
                              "useful for comparing against the organisers' baseline files")

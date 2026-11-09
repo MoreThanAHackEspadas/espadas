@@ -27,8 +27,10 @@ from . import config, prep
 
 HOME, AWAY, NONE = 0, 1, -1
 
-# Tuned with tools/tune_v1.py on Metrica Games 1 and 3, ball hidden on 25% of live frames
-# (degrade.py). Mean tuning spellF1 0.591; held-out Game 2 0.640 (0.656 / 0.608 at 15% / 35%).
+# Tuned (3 Nov) with tools/tune_v1.py on Metrica Games 1 and 3, ball hidden on 25% of live frames
+# (degrade.py). On that earlier bench (no ball blur or player error yet; checklist Phase 5/6
+# tables): mean tuning spellF1 0.591; held-out Game 2 0.640 (0.656 / 0.608 at 15% / 35%).
+# Not re-tuned since; on the current bench (four tracker levels) its tuning mean is 0.484.
 # out_margin sits at the top of its grid: the off-pitch rule rarely decides anything once the
 # walking rule is in, so its exact value barely matters.
 PARAMS = {

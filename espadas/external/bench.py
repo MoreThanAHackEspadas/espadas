@@ -9,8 +9,10 @@ external equivalent of games.py. Frames outside the graded halves are set to X, 
 does for our match. Scored with the vendored official possession_metrics.evaluate().
 
 The held-out game (HELD_OUT) is scored once, for the final candidates, by tools/selection.py.
-available() is the one place games are loaded, and it refuses a held-out game unless the caller
-passes heldout=True; on this command line that is --heldout.
+The game readers (metrica_csv, metrica_epts) refuse a held-out game unless the caller passes
+heldout=True. available() checks the whole list first, so it refuses before reading anything,
+and passes the opt-in on to the readers only when it was given one; on this command line that
+is --heldout.
 """
 
 import argparse
@@ -23,27 +25,13 @@ from .. import abstain, config, labelers, v2
 from . import degrade
 from . import events as ev
 from . import metrica_csv, metrica_epts
+# Agreed split (checklist 4.4): tune on 1 and 3, hold out 2 for the final comparison only.
+# Defined in the package so the readers enforce the same rule.
+from . import HELD_OUT, TUNING, HeldOutError, check_split  # noqa: F401
 
 pm = config.pm
 
 GAMES = {1: metrica_csv.load_game, 2: metrica_csv.load_game, 3: metrica_epts.load_game}
-# Agreed split (checklist 4.4): tune on 1 and 3, hold out 2 for the final comparison only.
-TUNING, HELD_OUT = (1, 3), (2,)
-
-
-class HeldOutError(RuntimeError):
-    """A held-out game was asked for without the explicit opt-in (heldout=True)."""
-
-
-def check_split(numbers, heldout=False):
-    """Raise HeldOutError if `numbers` names a held-out game and `heldout` is not set."""
-    asked = sorted(set(numbers) & set(HELD_OUT))
-    if asked and not heldout:
-        raise HeldOutError(
-            "game {} is held out (checklist 4.4): it is scored once, for the final candidates, "
-            "by tools/selection.py. Loading it anywhere else needs an explicit opt-in "
-            "(heldout=True; on a command line, --heldout).".format(
-                " ".join(str(n) for n in asked)))
 
 
 def reference(game):
@@ -96,7 +84,8 @@ def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT, use_abs
 def available(numbers, heldout=False):
     """[(number, game)] for the games that can be read; the others are reported and skipped.
 
-    A held-out game raises HeldOutError before anything is read, unless heldout=True."""
+    A held-out game raises HeldOutError before anything is read, unless heldout=True; the readers
+    get the same opt-in, so they refuse it too without one."""
     numbers = list(numbers)
     check_split(numbers, heldout)
     out = []
@@ -105,7 +94,7 @@ def available(numbers, heldout=False):
             print("game {}: no reader yet, skipped".format(n))
             continue
         try:
-            out.append((n, GAMES[n](n)))
+            out.append((n, GAMES[n](n, heldout=heldout)))
         except (IOError, OSError) as error:
             print("game {}: not downloaded ({}), skipped".format(n, error))
     return out

@@ -18,6 +18,7 @@ from espadas import abstain, atd, config, labelers, run, write  # noqa: E402
 from conftest import read_labels  # noqa: E402
 
 GRADED = config.half_of_frame() > 0
+DEFAULT = run.DEFAULT_LABELER          # the no-flag build's labeler, whatever it is
 
 
 def graded_x(path):
@@ -39,6 +40,8 @@ def params_none(monkeypatch):
 # --------------------------------------------------------------------------- the default build
 
 def test_default_labeler_is_v1(build, monkeypatch):
+    # Intentional tripwire: it fails when the default changes. Update it (and the README's
+    # "(labeler v1)" line) at the freeze, when the selected variant becomes the default (11.1).
     called = []
     original = labelers.LABELERS["v1"]
 
@@ -62,7 +65,7 @@ def test_x_is_off_by_default_and_the_build_is_labeler_plus_finalise(build, bundl
     # byte for byte what the labeler plus finalise() give, nothing else
     tracking = atd.load_tracking(bundle, use_cache=False)
     expected = write.write_csv(str(tmp_path / "expected.csv"),
-                               write.finalise(labelers.LABELERS["v1"](tracking)))
+                               write.finalise(labelers.LABELERS[DEFAULT](tracking)))
     assert same_bytes(path, expected)
 
 
@@ -74,7 +77,7 @@ def test_abstain_flag_alone_gives_x(build, params_none):
 
 def test_params_alone_gives_x_and_matches_the_flag(build, monkeypatch, params_none):
     flag = build("--no-cache", "--abstain", out="flag.csv")
-    monkeypatch.setitem(abstain.PARAMS, "v1", abstain.SETTING)
+    monkeypatch.setitem(abstain.PARAMS, DEFAULT, abstain.SETTING)
     params = build("--no-cache", out="params.csv")
     assert graded_x(params) > 0
     assert same_bytes(flag, params)          # what selection scores as "X on" is what ships
@@ -82,7 +85,7 @@ def test_params_alone_gives_x_and_matches_the_flag(build, monkeypatch, params_no
 
 def test_no_abstain_wins(build, monkeypatch, params_none):
     off = build("--no-cache", out="off.csv")
-    monkeypatch.setitem(abstain.PARAMS, "v1", abstain.SETTING)
+    monkeypatch.setitem(abstain.PARAMS, DEFAULT, abstain.SETTING)
     assert same_bytes(build("--no-cache", "--no-abstain", out="a.csv"), off)
     assert same_bytes(build("--no-cache", "--abstain", "--no-abstain", out="b.csv"), off)
 

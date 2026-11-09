@@ -9,16 +9,22 @@
 Game 2 is held out: nothing was ever tuned on it. v0-v3 were scored on it during development on
 the earlier bench (checklist 4.10, 5, 6, 7.2); it has not been scored on the current bench, and the
 final comparison on it is scored ONCE, here, for the final candidates only. This tool is the only
-code that loads it by default (bench.available refuses it otherwise). It makes that one shot
-complete (every candidate, with and without the X policy, at every tracker level and
-ball-hiding level, plus the tuning games for reference), reproducible (same bench, fixed seeds)
-and written down with the commit it ran on.
+code that loads it by default (bench.available and the game readers refuse it otherwise). It
+makes that one shot complete (every candidate, with and without the X policy, at every tracker
+level and ball-hiding level, plus the tuning games for reference), reproducible (same bench,
+fixed seeds) and written down with the commit it ran on.
 
 The once-rule: the tuning games are scored first. Immediately before the first held-out scoring
 the tool writes a dated "run started" marker to the report; from then on the report exists, and
 that is the lock. The results are appended when the run finishes. A run interrupted after that
 point (crash, Ctrl-C) leaves the marker without results: the one shot is spent, and a re-run
 needs --again. A run interrupted while still on the tuning games leaves nothing.
+
+docs/selection.md (REPORT) is the lock whatever --out says: a real run refuses if it exists, and
+the marker and the results always go there, plus a copy at --out if that is another path. A real
+run also refuses to start while tracked files have uncommitted changes (untracked files do not
+count), so the report's commit is what ran; --allow-dirty overrides that, and the report then
+says so. --dry-run and --smoke never write anything and skip both checks.
 
 How to read the result: spellF1 decides the ranking; the headline is the mean over the four
 tracker levels at 25% live ball hidden, with 15% / 35% as robustness checks. macroF1 is the
@@ -41,10 +47,12 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from espadas import abstain, config  # noqa: E402
+from espadas import abstain, config, labelers  # noqa: E402
 from espadas.external import bench, degrade  # noqa: E402
 
 CANDIDATES = ("v1", "v3", "v4")
+BASELINE = "v1"     # today's default build (espadas/run.py); the reading gives the margin over it
+TIE = 1e-9          # spellF1 differences smaller than this are an exact tie
 ABSTAIN = (False, True)
 HIDES = (0.15, 0.25, 0.35)
 HEADLINE_HIDE = degrade.LIVE_MISSING
@@ -163,28 +171,51 @@ def bands_note(spell_band=SPELL_BAND, macro_band=MACRO_BAND):
             "agreement across levels is not extra evidence.".format(spell_band, macro_band))
 
 
+def _ahead_at(by_level, name, levels):
+    """The tracker levels where `name` is strictly best; a level it shares the best score at
+    is a tie, not a lead."""
+    return [l for l in levels if l in by_level[name]
+            and all(by_level[name][l] - by_level[c].get(l, -1) > TIE
+                    for c in by_level if c != name)]
+
+
 def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, spell_band=SPELL_BAND,
             macro_band=MACRO_BAND):
-    """Plain sentences about the held-out result: leader, margin, levels, the X check, overfit,
-    and what the guidance bands are."""
+    """Plain sentences about the held-out result: leader (or a tie), margins over the runner-up
+    and over BASELINE, levels, the X check, overfit, and what the guidance bands are."""
     lines = []
     ranked = _ranked(summary, hide)
     if not ranked:
         return ["No held-out result at {:.0%}.".format(hide)]
     leader, best = ranked[0]
-    line = "Leader on held-out Game 2 at {:.0%} live ball hidden: {} (X off), spellF1 {:.3f}".format(
-        hide, leader, best)
-    if len(ranked) > 1:
-        runner, second = ranked[1]
+    top = [c for c, value in ranked if best - value < TIE]
+    rest = [(c, value) for c, value in ranked if best - value >= TIE]
+    if len(top) == 1:
+        line = "Leader on held-out Game 2 at {:.0%} live ball hidden: {} (X off), spellF1 {:.3f}"
+        line = line.format(hide, leader, best)
+    else:
+        line = ("No single leader on held-out Game 2 at {:.0%} live ball hidden: {} tied (X off), "
+                "spellF1 {:.3f}").format(hide, " and ".join(top), best)
+    if rest:
+        runner, second = rest[0]
         margin = best - second
         line += (", ahead of {} by {:.3f}, {} the organisers' spellF1 guidance band "
                  "({:.2f})").format(runner, margin, _versus(margin, spell_band), spell_band)
+        baseline = dict(rest).get(BASELINE)
+        if baseline is not None and runner != BASELINE:
+            margin = best - baseline
+            line += "; ahead of {} (today's default) by {:.3f}, {} the same band".format(
+                BASELINE, margin, _versus(margin, spell_band))
+    if len(ranked) > 1:
         by_level = {c: s["heldout"][hide]["by_level"] for (c, a), s in summary.items()
                     if not a and hide in s["heldout"]}
-        won = [l for l in levels if l in by_level[leader]
-               and all(by_level[leader][l] >= by_level[c].get(l, -1) for c in by_level)]
-        line += "; ahead at {} of {} tracker levels ({})".format(
-            len(won), len(levels), ", ".join(won) if won else "none")
+        parts = []
+        for name in top:
+            won = _ahead_at(by_level, name, levels)
+            parts.append("{}ahead at {} of {} tracker levels ({})".format(
+                name + " " if len(top) > 1 else "", len(won), len(levels),
+                ", ".join(won) if won else "none"))
+        line += "; " + ", ".join(parts)
     lines.append(line + ".")
 
     for candidate, _ in ranked:
@@ -207,8 +238,10 @@ def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, spell_band=SPELL_BAND,
         tune = summary[(candidate, False)]["tuning"].get(hide)
         if tune:
             lines.append("{}: tuning-game mean {:.3f} vs held-out {:.3f} ({:+.3f}); a large drop "
-                         "means the settings are overfitted to the tuning games.".format(
-                             candidate, tune["spell_f1"], held, held - tune["spell_f1"]))
+                         "may mean the settings are overfitted to the tuning games, but the games "
+                         "also differ in difficulty, so compare the candidates' drops with each "
+                         "other.".format(candidate, tune["spell_f1"], held,
+                                         held - tune["spell_f1"]))
     lines.append(bands_note(spell_band, macro_band))
     return lines
 
@@ -219,9 +252,19 @@ def _cell(block, metric, fmt="{:.3f}"):
     return fmt.format(block[metric]) if block else "–"
 
 
+def _tuning_games():
+    return " + ".join(str(g) for g in bench.TUNING)
+
+
 def heading(meta):
-    return "## Selection run: {}, commit `{}`{}".format(
-        meta.get("date", "?"), meta.get("commit", "?"),
+    """The provenance heading; meta["rehearsal"] (a --smoke run) says it is not the real run."""
+    if meta.get("rehearsal"):
+        title = ("## Smoke rehearsal on the tuning games ({}) only, held-out Game 2 not "
+                 "scored".format(_tuning_games()))
+    else:
+        title = "## Selection run"
+    return "{}: {}, commit `{}`{}".format(
+        title, meta.get("date", "?"), meta.get("commit", "?"),
         " **(uncommitted changes in the working tree)**" if meta.get("dirty") else "")
 
 
@@ -241,11 +284,17 @@ def render(summary, hides=HIDES, levels=LEVELS, meta=None, spell_band=SPELL_BAND
     headline = HEADLINE_HIDE if HEADLINE_HIDE in hides else hides[len(hides) // 2]
     others = [h for h in hides if h != headline]
     out = [heading(meta), ""] if with_heading else []
-    out.append("Candidates scored on held-out Metrica Game 2 and, for reference, on the tuning "
-               "games (1 + 3). spellF1 = mean over the tracker levels {}. X on = what `python -m "
+    if meta.get("rehearsal"):
+        scope = ("Smoke rehearsal: candidates scored on the tuning games ({}) only; held-out "
+                 "Game 2 was not loaded or scored, so its columns are empty.".format(
+                     _tuning_games()))
+    else:
+        scope = ("Candidates scored on held-out Metrica Game 2 and, for reference, on the tuning "
+                 "games ({}).".format(_tuning_games()))
+    out.append("{} spellF1 = mean over the tracker levels {}. X on = what `python -m "
                "espadas.run --abstain` builds (`abstain.resolve`): {}. Guidance bands {:.2f} "
                "spellF1 / {:.2f} macroF1: smaller differences are not evidence (see the "
-               "reading).".format(" / ".join(levels),
+               "reading).".format(scope, " / ".join(levels),
                                   _x_setting(sorted({c for c, _ in summary})),
                                   spell_band, macro_band))
     out.append("")
@@ -333,11 +382,31 @@ def provenance():
             "dirty": bool(git("status", "--porcelain"))}
 
 
+def tracked_changes():
+    """`git status` lines for tracked files with uncommitted changes (staged or not); untracked
+    files are not listed. None if git could not be asked (not a checkout, no git)."""
+    try:
+        out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def report_paths(out):
+    """Where a real run writes: REPORT (the canonical lock) first, then `out` if it is another
+    path."""
+    if os.path.realpath(os.path.abspath(out)) == os.path.realpath(REPORT):
+        return [REPORT]
+    return [REPORT, out]
+
+
 # --------------------------------------------------------------------------- command line
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--candidates", nargs="+", default=list(CANDIDATES),
+                        choices=sorted(labelers.LABELERS),
                         help="labelers to compare (default: {})".format(" ".join(CANDIDATES)))
     parser.add_argument("--no-x", action="store_true", help="skip the 'X policy on' variants")
     parser.add_argument("--hides", nargs="+", type=float, default=list(HIDES),
@@ -354,7 +423,13 @@ def main(argv=None):
                              "(a rehearsal that never touches the held-out game)")
     parser.add_argument("--again", action="store_true",
                         help="append a new section to an existing report (a second shot)")
-    parser.add_argument("--out", default=REPORT, help="report path (default: docs/selection.md)")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="run even though tracked files have uncommitted changes (the report "
+                             "then says so); only if the team agrees")
+    parser.add_argument("--out", default=REPORT,
+                        help="report path (default: docs/selection.md). docs/selection.md stays "
+                             "the lock whatever this says: a real run refuses if it exists and "
+                             "always writes there too")
     args = parser.parse_args(argv)
 
     abstain_modes = (False,) if args.no_x else ABSTAIN
@@ -363,7 +438,8 @@ def main(argv=None):
     else:
         games = bench.HELD_OUT if args.no_tuning else bench.TUNING + bench.HELD_OUT
     specs = plan(args.candidates, abstain_modes, tuple(args.hides), tuple(args.levels), games)
-    exists = os.path.exists(args.out)
+    paths = report_paths(args.out)
+    taken = [path for path in paths if os.path.exists(path)]
 
     print("{} scorings: candidates {}; X {}; hide levels {}; tracker levels {}; games {} "
           "(held out: {}).".format(len(specs), " ".join(args.candidates),
@@ -371,18 +447,37 @@ def main(argv=None):
                                    " ".join("{:.0%}".format(h) for h in args.hides),
                                    " ".join(args.levels),
                                    " ".join(str(g) for g in games), bench.HELD_OUT[0]))
-    print("report: {}{}".format(
-        "none (smoke run)" if args.smoke else args.out,
-        " (exists; --again needed)" if exists and not args.smoke else ""))
+    if args.smoke:
+        print("report: none (smoke run)")
+    else:
+        print("report: {}{}{}".format(
+            paths[0], "" if len(paths) == 1 else " (the lock, whatever --out says) and a copy at "
+            "{}".format(paths[1]),
+            " ({} exists; --again needed)".format(" and ".join(taken)) if taken else ""))
     if args.dry_run:
         return 0
-    if exists and not args.again and not args.smoke:
+    if taken and not args.again and not args.smoke:
         print("STOP: {} already exists, so the one shot has been taken. Re-run with --again only "
-              "if the team agrees a second run is needed.".format(args.out))
+              "if the team agrees a second run is needed.".format(" and ".join(taken)))
         return 1
+    if not args.smoke and not args.allow_dirty:
+        changed = tracked_changes()
+        if changed is None:
+            print("STOP: could not ask git whether tracked files have uncommitted changes. Run "
+                  "from the git checkout of the pushed commit, or add --allow-dirty only if the "
+                  "team agrees.")
+            return 1
+        if changed:
+            print("STOP: tracked files have uncommitted changes, so the report's commit would not "
+                  "be what ran:\n{}\nCommit and push them (or undo them) first. Add --allow-dirty "
+                  "only if the team agrees; the report then says the working tree had "
+                  "uncommitted changes.".format("\n".join("  " + line for line in changed)))
+            return 1
 
     config.seed_everything()
     meta = provenance()
+    if args.smoke:
+        meta["rehearsal"] = True
     # The one place in the repository allowed to load the held-out game by default: a real run.
     loaded = dict(bench.available(games, heldout=not args.smoke))
     missing = [g for g in games if g not in loaded]
@@ -393,10 +488,11 @@ def main(argv=None):
     locked = []
 
     def lock():
-        start_report(args.out, meta, again=args.again)
+        for path in paths:                 # REPORT first: the canonical lock
+            start_report(path, meta, again=args.again)
         locked.append(True)
         print("lock written: {} (run started; from here the one shot is spent even if the run "
-              "is interrupted)".format(args.out))
+              "is interrupted)".format(" and ".join(paths)))
 
     results = run(specs, loaded, before_heldout=None if args.smoke else lock)
     summary = summarise(results, tuning=bench.TUNING, heldout=bench.HELD_OUT[0])
@@ -407,10 +503,12 @@ def main(argv=None):
         return 0
     if not locked:            # a real run always scores the held-out game; never lose results
         lock()
-    finish_report(args.out, "Completed {}: all {} scorings finished.\n\n{}".format(
+    text = "Completed {}: all {} scorings finished.\n\n{}".format(
         datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(results),
-        render(summary, hides, levels, meta, with_heading=False)))
-    print("written: {}".format(args.out))
+        render(summary, hides, levels, meta, with_heading=False))
+    for path in paths:
+        finish_report(path, text)
+    print("written: {}".format(" and ".join(paths)))
     return 0
 
 

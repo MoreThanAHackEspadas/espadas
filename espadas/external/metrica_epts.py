@@ -11,6 +11,9 @@ for missing), but **not** the same player layout, so atd.parse_raw() must not be
 Here every <Player> gets one stable slot (35 for Game 3), team_of_slot comes from its teamId,
 and home is the first <Team> (also the Score idLocalTeam). Output arrays match the rest of the
 pipeline: players (n, slots, 2) and ball (n, 2) in metres, 0-based frames.
+
+Like metrica_csv, game_dir() refuses a held-out game (checklist 4.4) unless the caller passes
+heldout=True, before any file is opened.
 """
 
 import json
@@ -19,18 +22,19 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from . import metrica_dir
+from . import check_split, metrica_dir
 
 FPS = 25
 GAME = 3
 
 
-def game_dir(game=GAME):
+def game_dir(game=GAME, heldout=False):
+    check_split([game], heldout)
     return os.path.join(metrica_dir(), "data", "Sample_Game_{}".format(game))
 
 
-def _paths(game=GAME):
-    folder, stem = game_dir(game), "Sample_Game_{}".format(game)
+def _paths(game=GAME, heldout=False):
+    folder, stem = game_dir(game, heldout), "Sample_Game_{}".format(game)
     return (os.path.join(folder, stem + "_metadata.xml"),
             os.path.join(folder, stem + "_tracking.txt"),
             os.path.join(folder, stem + "_events.json"))
@@ -123,8 +127,9 @@ def read_events(path, team_ids):
     return events
 
 
-def load_game(game=GAME):
-    meta_path, tracking_path, events_path = _paths(game)
+def load_game(game=GAME, heldout=False):
+    """The game as the bench needs it. A held-out game needs heldout=True (checklist 4.4)."""
+    meta_path, tracking_path, events_path = _paths(game, heldout)
     meta = read_metadata(meta_path)
     players, ball = read_tracking(tracking_path, meta)
     tracking = {"players": players, "ball": ball, "team_of_slot": meta["team_of_slot"]}

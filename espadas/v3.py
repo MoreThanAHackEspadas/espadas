@@ -3,8 +3,9 @@
 1. **Dead ball:** exactly as v2 (Phase 5 dead log-odds, smoothed, thresholded, cleaned up).
 2. **Who has it:** CUSUM (v2.cusum) on the Phase 5 team log-odds, capped at `team_cap` per frame,
    plus touch pulses from touches.py: `confirm_weight` for a confirmed touch (pass chain or
-   hold), `touch_weight` for any other touch. With `confirm_weight` near `switch_cost`, a
-   confirmed touch by the other team switches possession on its own; a lone deflection does not.
+   hold), `touch_weight` for any other touch. With the tuned PARAMS (confirm 20, other 30,
+   `switch_cost` 60) no single touch switches possession on its own: two touches by the other
+   team do, or one plus enough team evidence; the CUSUM does the confirming.
 
 Tracking only, no Smart Tagging. Settings tuned by tools/tune.py --labeler v3 on Metrica 1 and 3
 only; never on our match.
