@@ -7,14 +7,17 @@ Format (see the organisers' starter/baseline.py, MIT): one line per frame,
 players first (one group per track slot, 46 slots), then the ball. x and y are normalised 0-1,
 "NaN" marks a missing observation, and <frame> counts video frames from 1.
 
-The parse is slow (a couple of minutes), so the result is cached as .npz under CACHE_DIR keyed by
-the raw file's size and mtime. The cache is an optimisation only: the output is identical with
-or without it.
+The parse is slow (a couple of minutes), so the result is cached as .npz under CACHE_DIR, keyed
+by the raw file's content (SHA-256) and everything else that shapes the parsed arrays (number of
+track slots, frame count, pitch, CACHE_VERSION). A cache entry is used only if its arrays have
+the expected shapes and types; otherwise the file is parsed again. The cache is an optimisation
+only: the output is identical with or without it.
 """
 
 import hashlib
 import os
 import xml.etree.ElementTree as ET
+import zipfile
 
 import numpy as np
 
@@ -79,32 +82,71 @@ def parse_raw(raw_path, n_slots, n_frames=config.N_FRAMES, pitch=config.PITCH):
     return players, ball, player_speed, ball_speed
 
 
-# Bump whenever parse_raw's output changes, so an old cache is never read back.
-CACHE_VERSION = 2
+# Bump whenever parse_raw's output or the cache key changes, so an old cache is never read back.
+# 3: key on the raw file's content instead of its name, size and mtime.
+CACHE_VERSION = 3
 CACHED = ("players", "ball", "player_speed", "ball_speed")
 
 
-def _cache_path(raw_path):
-    stat = os.stat(raw_path)
-    key = "{}|{}|{}|{}|v{}".format(os.path.basename(raw_path), stat.st_size, int(stat.st_mtime),
-                                   config.PITCH, CACHE_VERSION)
-    digest = hashlib.sha256(key.encode()).hexdigest()[:16]
+def _file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cache_path(raw_path, n_slots, n_frames, pitch):
+    """Cache file for parse_raw(raw_path, n_slots, n_frames, pitch): keyed on the file's content
+    and every other input that shapes the arrays, so two different files never share an entry,
+    whatever their names, sizes or times."""
+    key = "{}|slots {}|frames {}|pitch {}|v{}".format(
+        _file_sha256(raw_path), n_slots, n_frames, tuple(pitch), CACHE_VERSION)
+    digest = hashlib.sha256(key.encode()).hexdigest()[:32]
     return os.path.join(config.CACHE_DIR, "atd_{}.npz".format(digest))
+
+
+def _expected(n_slots, n_frames):
+    """{name: (shape, dtype)} of parse_raw's arrays."""
+    return {"players": ((n_frames, n_slots, 2), np.float64),
+            "ball": ((n_frames, 2), np.float64),
+            "player_speed": ((n_frames, n_slots), np.float32),
+            "ball_speed": ((n_frames,), np.float32)}
+
+
+def _read_cache(path, n_slots, n_frames):
+    """The cached arrays, or None if the entry is missing, unreadable or not the expected
+    shapes and types (then the caller parses again)."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with np.load(path) as z:
+            tracking = {name: z[name] for name in CACHED}
+    except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
+        return None
+    for name, (shape, dtype) in _expected(n_slots, n_frames).items():
+        if tracking[name].shape != shape or tracking[name].dtype != dtype:
+            return None
+    return tracking
 
 
 def load_tracking(data_dir=None, use_cache=True):
     """dict(players, ball, player_speed, ball_speed, team_of_slot) for the tactical source."""
     meta_path, raw_path = config.require(["atd_meta", "atd_raw"], data_dir)
     team_of_slot = team_of_each_track(meta_path)
+    n_slots, n_frames, pitch = len(team_of_slot), config.N_FRAMES, config.PITCH
 
-    cache = _cache_path(raw_path)
-    if use_cache and os.path.isfile(cache):
-        with np.load(cache) as z:
-            tracking = {name: z[name] for name in CACHED}
-    else:
-        tracking = dict(zip(CACHED, parse_raw(raw_path, len(team_of_slot))))
+    tracking = None
+    if use_cache:
+        cache = _cache_path(raw_path, n_slots, n_frames, pitch)
+        tracking = _read_cache(cache, n_slots, n_frames)
+    if tracking is None:
+        tracking = dict(zip(CACHED, parse_raw(raw_path, n_slots, n_frames, pitch)))
         if use_cache:
             os.makedirs(config.CACHE_DIR, exist_ok=True)
-            np.savez(cache, **tracking)
+            partial = cache + ".partial"
+            with open(partial, "wb") as handle:      # written whole, then renamed into place
+                np.savez(handle, **tracking)
+            os.replace(partial, cache)
     tracking["team_of_slot"] = team_of_slot
     return tracking
