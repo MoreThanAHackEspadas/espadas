@@ -9,6 +9,8 @@ is visible early. --tracking instead compares the *input* (players tracked, ball
 the nearest player is, ball jitter, touches found), to see where our tracking differs from the
 external games (checklist 6.6). Never use these numbers to choose settings: tuning happens on
 external games only (organisers' clarification). Prints aggregates only, no per-frame data.
+The external rows are the tuning games; --heldout adds the held-out game (off by default:
+tools/selection.py scores it once, at selection).
 """
 
 import argparse
@@ -64,12 +66,17 @@ def tracking_line(name, tracking, graded):
         in_graded.sum() / minutes * 90, float(np.mean(ok[in_graded])) if in_graded.any() else 0))
 
 
-def tracking_table(data_dir):
+def external_games(heldout=False):
+    """Game numbers to show: the tuning games, plus the held-out one only if asked."""
+    return sorted(bench.TUNING + (bench.HELD_OUT if heldout else ()))
+
+
+def tracking_table(data_dir, heldout=False):
     print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}".format(
         "", "players", "ball", "near m", "<=1m", "<=2m", "jitter", "tch/90'", "conf"))
     print("{:<16}{:>8}{:>8}{:>9}{:>8}{:>8}{:>9}{:>9}{:>8}".format(
         "", "tracked", "seen", "median", "", "", "m/s", "", ""))
-    for n, game in bench.available([1, 2, 3]):
+    for n, game in bench.available(external_games(heldout), heldout=heldout):
         _, tracking, graded = bench.setup(game, degrade.LIVE_MISSING)
         tracking_line(game["name"], tracking, graded)
     tracking = atd.load_tracking(data_dir)
@@ -86,15 +93,18 @@ def main(argv=None):
     parser.add_argument("--data-dir")
     parser.add_argument("--tracking", action="store_true",
                         help="compare input quality instead of a labeler's output")
+    parser.add_argument("--heldout", action="store_true",
+                        help="also show the held-out game (off by default: tools/selection.py "
+                             "scores it once, at selection)")
     args = parser.parse_args(argv)
     config.seed_everything()
     if args.tracking:
-        tracking_table(args.data_dir)
+        tracking_table(args.data_dir, args.heldout)
         return 0
 
     print("{:<22}{:>7}{:>9}{:>9}{:>8}{:>7}{:>7}{:>7}".format(
         "", "spells", "per 90'", "mean s", "home", "H", "A", "D"))
-    for n, game in bench.available([1, 2, 3]):
+    for n, game in bench.available(external_games(args.heldout), heldout=args.heldout):
         line("ref " + game["name"], bench.reference(game)[0])
     tracking = atd.load_tracking(args.data_dir)
     line("{} on BAR-ATH".format(args.labeler),

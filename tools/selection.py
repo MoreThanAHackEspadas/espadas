@@ -313,7 +313,8 @@ def main(argv=None):
         return 1
 
     config.seed_everything()
-    loaded = dict(bench.available(games))
+    # The one place in the repository allowed to load the held-out game by default: a real run.
+    loaded = dict(bench.available(games, heldout=not args.smoke))
     missing = [g for g in games if g not in loaded]
     if missing:
         print("STOP: game(s) {} not available; run tools/fetch_metrica.py first.".format(missing))

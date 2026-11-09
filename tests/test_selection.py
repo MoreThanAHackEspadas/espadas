@@ -135,7 +135,7 @@ def test_smoke_mode_scores_only_tuning_games_and_writes_no_report(monkeypatch, t
     s = load()
     asked = {}
 
-    def fake_available(numbers):
+    def fake_available(numbers, heldout=False):
         asked["games"] = tuple(numbers)
         return [(n, {"name": "fake{}".format(n)}) for n in numbers]
 
@@ -149,6 +149,30 @@ def test_smoke_mode_scores_only_tuning_games_and_writes_no_report(monkeypatch, t
     assert s.main(["--smoke", "--candidates", "v4", "--levels", "light", "--out", out]) == 0
     assert asked["games"] == s.bench.TUNING
     assert not os.path.exists(out)
+
+
+def test_only_the_real_run_asks_for_the_heldout_game(monkeypatch, tmp_path):
+    s = load()
+    asked = []
+
+    def fake_available(numbers, heldout=False):
+        asked.append((tuple(numbers), heldout))
+        s.bench.check_split(numbers, heldout)             # the real guard
+        return [(n, {"name": "fake{}".format(n)}) for n in numbers]
+
+    def fake_score(name, game, hide_ball=None, blur=None, use_abstain=None):
+        return {"spell_f1_mean": 0.5, "macro_f1": 0.8, "n_pred_spells": 1, "n_gt_spells": 1,
+                "n_abstain_on_graded": 0}
+
+    monkeypatch.setattr(s.bench, "available", fake_available)
+    monkeypatch.setattr(s.bench, "score", fake_score)
+    out = str(tmp_path / "selection.md")
+    small = ["--candidates", "v4", "--levels", "light", "--hides", "0.25", "--no-x", "--out", out]
+    assert s.main(["--smoke"] + small) == 0
+    assert asked == [(s.bench.TUNING, False)]
+    asked.clear()
+    assert s.main(small) == 0
+    assert asked == [(s.bench.TUNING + s.bench.HELD_OUT, True)]
 
 
 def test_dry_run_prints_the_plan_and_reads_no_game(monkeypatch, capsys):

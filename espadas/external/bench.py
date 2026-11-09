@@ -1,12 +1,16 @@
 """Score any labeler on external games with the official metric. The only judge for settings.
 
-    python -m espadas.external.bench                  # v0 on every available game
-    python -m espadas.external.bench --labeler v0 --games 1 2 3
+    python -m espadas.external.bench                  # v0 on the tuning games (1 and 3)
+    python -m espadas.external.bench --labeler v1 v3 v4 --games 1 3
 
 Reference labels come from each game's events by code (events.py). The labeler sees only the
 tracking (as it would on our match) plus the match-level frame layout (halves, kickoffs), the
 external equivalent of games.py. Frames outside the graded halves are set to X, as finalise()
 does for our match. Scored with the vendored official possession_metrics.evaluate().
+
+The held-out game (HELD_OUT) is scored once, for the final candidates, by tools/selection.py.
+available() is the one place games are loaded, and it refuses a held-out game unless the caller
+passes heldout=True; on this command line that is --heldout.
 """
 
 import argparse
@@ -25,6 +29,21 @@ pm = config.pm
 GAMES = {1: metrica_csv.load_game, 2: metrica_csv.load_game, 3: metrica_epts.load_game}
 # Agreed split (checklist 4.4): tune on 1 and 3, hold out 2 for the final comparison only.
 TUNING, HELD_OUT = (1, 3), (2,)
+
+
+class HeldOutError(RuntimeError):
+    """A held-out game was asked for without the explicit opt-in (heldout=True)."""
+
+
+def check_split(numbers, heldout=False):
+    """Raise HeldOutError if `numbers` names a held-out game and `heldout` is not set."""
+    asked = sorted(set(numbers) & set(HELD_OUT))
+    if asked and not heldout:
+        raise HeldOutError(
+            "game {} is held out (checklist 4.4): it is scored once, for the final candidates, "
+            "by tools/selection.py. Loading it anywhere else needs an explicit opt-in "
+            "(heldout=True; on a command line, --heldout).".format(
+                " ".join(str(n) for n in asked)))
 
 
 def reference(game):
@@ -70,7 +89,12 @@ def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT, use_abs
     return evaluate(gt_codes, labels, graded)
 
 
-def available(numbers):
+def available(numbers, heldout=False):
+    """[(number, game)] for the games that can be read; the others are reported and skipped.
+
+    A held-out game raises HeldOutError before anything is read, unless heldout=True."""
+    numbers = list(numbers)
+    check_split(numbers, heldout)
     out = []
     for n in numbers:
         if n not in GAMES:
@@ -86,7 +110,13 @@ def available(numbers):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--labeler", nargs="+", default=["v0"], choices=sorted(labelers.LABELERS))
-    parser.add_argument("--games", nargs="+", type=int, default=[1, 2, 3])
+    parser.add_argument("--games", nargs="+", type=int, default=list(TUNING),
+                        help="games to score (default: the tuning games {}; held-out {} needs "
+                             "--heldout)".format(" ".join(map(str, TUNING)),
+                                                 " ".join(map(str, HELD_OUT))))
+    parser.add_argument("--heldout", action="store_true",
+                        help="allow the held-out game(s) in --games. Held-out scoring belongs "
+                             "to tools/selection.py (once, at selection)")
     parser.add_argument("--hide-ball", type=float, default=degrade.LIVE_MISSING, metavar="FRAC",
                         help="hide ball bursts until this fraction of LIVE frames has no ball "
                              "(default {}; negative disables)".format(degrade.LIVE_MISSING))
@@ -96,9 +126,15 @@ def main(argv=None):
     parser.add_argument("--abstain", action="store_true",
                         help="apply the X policy (abstain.PARAMS) on graded frames")
     args = parser.parse_args(argv)
+    held = sorted(set(args.games) & set(HELD_OUT))
+    if held and not args.heldout:
+        parser.error("game {} is held out: it is scored once, at selection, by "
+                     "tools/selection.py. Score the tuning games ({}) instead, or add --heldout "
+                     "only if the team agreed to score the held-out game here.".format(
+                         " ".join(map(str, held)), " ".join(map(str, TUNING))))
     config.seed_everything()
 
-    games = available(args.games)
+    games = available(args.games, heldout=args.heldout)
     print("ball blur {}, hidden to {} missing on live frames".format(
         args.blur, "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
     print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}{:>8}".format(

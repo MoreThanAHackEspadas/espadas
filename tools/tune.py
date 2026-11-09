@@ -1,14 +1,16 @@
 """Tune a labeler's decoding settings on the external TUNING games only, by coordinate descent.
 
-    python tools/tune.py --labeler v2          # prints the search, the best PARAMS, then held-out
+    python tools/tune.py --labeler v2          # prints the search and the best PARAMS
 
 Works for any labeler module exposing features(tracking), decode(features, params), PARAMS and
 GRID (v2 onwards; v1 has its own tools/tune_v1.py). Same protocol as tune_v1.py: objective is the
-mean spellF1 over Metrica 1 and 3 *and* over the light, medium and heavy ball blur
-(degrade.BLUR; checklist 6.6: a method must work for any plausible tracker, not one blur level),
-with the ball hidden on degrade.LIVE_MISSING of live frames; the chosen settings are re-scored at
-15% / 35% hidden. The held-out game is scored once, for the chosen settings only, and never
-used to choose (--skip-heldout while developing). Our match is never touched. Deterministic.
+mean spellF1 over Metrica 1 and 3 *and* over the four tracker levels (degrade.TRACKER_LEVELS:
+light, medium, heavy and smooth ball blur plus player position error; checklist 6.6, 6.7: a
+method must work for any plausible tracker, not one level), with the ball hidden on
+degrade.LIVE_MISSING of live frames; the chosen settings are re-scored at 15% / 35% hidden.
+The held-out game is not scored: that happens once, at selection, in tools/selection.py.
+--heldout scores it here for the chosen settings (never used to choose); --skip-heldout is
+still accepted and changes nothing. Our match is never touched. Deterministic.
 
 Copy the printed PARAMS into the labeler module.
 """
@@ -32,9 +34,9 @@ OBJECTIVE_BLURS = degrade.TRACKER_LEVELS   # light, medium, heavy, smooth (6.6, 
 MAX_SWEEPS = 4
 
 
-def prepare(module, numbers, hide=HIDE_BALL, blur=degrade.BLUR_DEFAULT):
+def prepare(module, numbers, hide=HIDE_BALL, blur=degrade.BLUR_DEFAULT, heldout=False):
     out = []
-    for _, game in bench.available(numbers):
+    for _, game in bench.available(numbers, heldout=heldout):
         gt, tracking, graded = bench.setup(game, hide, blur)
         out.append((game["name"], gt, module.features(tracking), graded))
     return out
@@ -49,8 +51,12 @@ def objective(module, games, params):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--labeler", required=True, help="module in espadas/, e.g. v2")
+    parser.add_argument("--heldout", action="store_true",
+                        help="also score the held-out game for the chosen settings (off by "
+                             "default: tools/selection.py scores it once, at selection)")
     parser.add_argument("--skip-heldout", action="store_true",
-                        help="do not score the held-out game (use while developing)")
+                        help="do not score the held-out game (the default now; kept so old "
+                             "commands still run; wins over --heldout)")
     args = parser.parse_args(argv)
     module = importlib.import_module("espadas." + args.labeler)
     config.seed_everything()
@@ -82,10 +88,10 @@ def main(argv=None):
         score = np.mean([objective(module, prepare(module, bench.TUNING, hide, b), params)[0]
                          for b in OBJECTIVE_BLURS])
         print("  tune @ {:.0%} live missing, all blurs: mean spellF1 {:.4f}".format(hide, score))
-    if args.skip_heldout:
+    if args.skip_heldout or not args.heldout:
         return 0
     for hide, blur in [(HIDE_BALL, b) for b in OBJECTIVE_BLURS] + checks:
-        for name, gt, f, graded in prepare(module, bench.HELD_OUT, hide, blur):
+        for name, gt, f, graded in prepare(module, bench.HELD_OUT, hide, blur, heldout=True):
             r = bench.evaluate(gt, module.decode(f, params), graded)
             print("  HELDOUT  {:<10} @ {:.0%} live missing, blur {:<6} spellF1 {:.4f}  "
                   "macroF1 {:.4f}  n_pred {}  n_gt {}".format(
