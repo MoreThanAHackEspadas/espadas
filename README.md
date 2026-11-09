@@ -52,6 +52,9 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 python -m espadas.run                   # -> out/espadas.csv (labeler v1), validated, prints its SHA-256
 ```
 
+**Expected SHA-256 of the submitted `out/espadas.csv`:** _filled in at the freeze_ (checklist
+11.5). A clean build must print exactly this value.
+
 The first run parses the tracking (a couple of minutes) and caches arrays in `cache/`. The cache
 never changes the output.
 
@@ -83,10 +86,10 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/prep.py` | ball cleaning, gap filling, gap lengths, ball speed, attacking direction (step 1); `prepare()` takes another match's halves/kickoffs too |
 | `espadas/homography.py` | optional pitch -> pixel homography, for video work |
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
-| `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games |
+| `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games (3 Nov, on the earlier bench; not re-tuned on the final one) |
 | `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) combined into a dead log-odds and a home log-odds per frame; models fitted by `tools/fit_evidence.py` on external games, stored in `evidence_models.py` |
 | `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
-| `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close), team, control confirmation (pass chain or hold), touch pulses for the decoder |
+| `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close) and carrier touches (a change of who has the ball at their feet, no kink needed; 6.7b), merging the two, team, control confirmation (pass chain or hold), touch pulses for the decoder; `v3` uses kink touches, `v4` both |
 | `espadas/v3.py` | `v3`: `v2` + touch pulses; settings tuned by `tools/tune.py --labeler v3` |
 | `espadas/v4.py` | `v4`: Phase 7 5-state hidden Markov model (home/away in control or loose, dead) on the Phase 5 scores and Phase 6 touches, Viterbi per half; a missing ball is no information; settings tuned by `tools/tune.py --labeler v4` |
 | `espadas/write.py` | final match rules, CSV writer, official validation (step 5) |
@@ -108,7 +111,7 @@ the ground truth or the provided video. External data lives outside this repo un
 
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
-| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Published openly by Metrica Sports for the analytics community; no formal licence file. Their README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning (Games 1, 3) and held-out comparison (Game 2) |
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning (Games 1, 3) and held-out comparison (Game 2) |
 
 Reference labels on external games are derived **by code** from each game's event data
 (`espadas/external/events.py`, rules documented there). No hand labels are used.

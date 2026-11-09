@@ -15,10 +15,11 @@ How that maps onto Metrica events (definitions: documentation/events-definitions
 - **Control events**: SET PIECE, PASS, CARRY, SHOT and BALL LOST, unless the subtype says it was
   a header or a clearance (a single touch). BALL LOST implies the team had the ball first
   (a failed pass, a dispossession).
-- **Touch-only events**: RECOVERY, CHALLENGE, and headers/clearances. They never change
-  possession on their own, but if the same team follows with a control event before the other
-  team does anything in play, the change is dated back to the first of those events (the moment
-  the ball was won).
+- **Touch-only events**: RECOVERY and headers/clearances. They never change possession on their
+  own, but if the same team follows with a control event before the other team does anything in
+  play, the change is dated back to the first of those events (the moment the ball was won).
+  CHALLENGE events are ignored altogether (not in IN_PLAY): they neither start such a back-dated
+  change nor interrupt one.
 - **Dead ball** starts at: BALL OUT (its end frame: when the ball left the pitch), a SHOT whose
   subtype ends in OUT or GOAL (its end frame), FAULT RECEIVED (its start frame: the whistle), a
   BALL LOST tagged OFFSIDE or HAND BALL (its end frame). It

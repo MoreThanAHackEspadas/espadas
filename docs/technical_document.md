@@ -4,8 +4,9 @@
 
 ## 1. Approach
 
-The file is produced by a pipeline that reads only the automatic tracking of the provided game
-and has no tuned number that was chosen on it:
+The file is produced by a pipeline that reads only the automatic tracking of the provided game.
+No setting in it was fitted or tuned on that game or its ground truth (label-free aggregate
+measurements of its tracking did inform some design choices; section 3 says which):
 
 1. **Preprocessing.** Ball positions that jump faster than 40 m/s are dropped, gaps of up to 1 s
    are filled, speeds are computed, and each team's attacking direction is read from the kick-off
@@ -21,7 +22,9 @@ and has no tuned number that was chosen on it:
 3. **Touches.** Moments a player plays the ball, found in two ways: a bend in the ball's path
    with a player within reach, and a change of who has the ball at their feet (the nearest player
    within reach for a run of frames), which needs no bend. A touch followed by a same-team touch
-   or a hold is "confirmed" (control).
+   within a second is "confirmed" (control). Confirmation by a hold (the same player staying
+   with the ball) exists in the code but is switched off in `v4`'s tuned settings; `v3` uses it,
+   and finds touches from bends only.
 4. **Sequence model.** The scores and touches of a whole half are decoded at once (below).
 5. **Output.** The organisers' pre-kick-off window is forced to `D`, ungraded frames are `X`, the
    file is validated with the organisers' own checks and its SHA-256 is printed.
@@ -36,10 +39,11 @@ loose ball, a restart is taken in control) are built into the model rather than 
 only a few dozen weights and costs are tuned, on an external bench made deliberately harder than
 the tuning games. We kept a plain rule-based variant (`v1`: dead-ball rules plus a hysteresis
 switch on the nearest player) as a candidate throughout; it is simpler but collapses on
-realistic tracker noise, which is why the sequence model was built. We did not build our own
-ball detector on the video: the provided tracking already gives positions, the detector would
-have to be trained on external data only, and the time was better spent on transfer between
-trackers, which turned out to be the real problem (sections 3 and 5).
+realistic tracker noise (with its settings from the earlier, easier bench; section 5), which is
+why the sequence model was built. We did not build our own ball detector on the video: the
+provided tracking already gives positions, the detector would have to be trained on external
+data only, and the time was better spent on transfer between trackers, which turned out to be
+the real problem (sections 3 and 5).
 
 _[Selection pending (10–12 Nov): the variant below is the one leading on the tuning games; the
 final choice is made once on the held-out game and recorded in `docs/selection.md`.]_
@@ -50,10 +54,12 @@ Each half is decoded as one sequence by a 5-state hidden Markov model: home in c
 loose (ball loose, home had it last), away in control, away loose, dead. A loose ball keeps the
 label of the last team in control, as the official rules say, so a deflection or block is not a
 change of possession. Per-frame evidence is the Phase 5 dead and home log-odds plus the Phase 6
-touches: a confirmed touch (pass chain or hold) favours that team in control; a lone touch counts
-against the other team being in control and mildly for the toucher's team. When the ball is not tracked, no ball-based evidence
-is used at all (no information), and on those frames the dead score keeps a fixed, untuned
-threshold (decision (b), section 2). Switching between states has a cost per kind of change
+touches: a confirmed touch (a same-team next touch within a second) favours that team in
+control; a lone touch counts against the other team being in control and gives the toucher's
+team a large credit, tuned larger than a confirmed touch's, so one clear touch can switch
+possession (section 4). When the ball is not tracked, no ball-based evidence is used at all (no
+information), and on those frames the dead score keeps a fixed, untuned threshold (decision
+(b), section 3). Switching between states has a cost per kind of change
 (control to loose and back, turnover via a loose ball, stoppage, restart); a direct change from
 one team's control to the other's is ruled out, so every change of possession passes through a
 loose ball, and a restart is always taken in control. Viterbi finds the single best
@@ -100,26 +106,57 @@ were produced by the data provider, not by us; we use them only to derive per-fr
 labels **by code** (section 4), so no human-made label of ours exists anywhere in the pipeline.
 The rules were reviewed against Metrica's event definitions and the data
 (`docs/events_rules_review.md`); their known limits are listed in section 5.
-**Rights:** Metrica Sports publishes these games openly, "to provide some sample data to play
-around with to the broader football analytics community". The repository's terms ("Legal
-stuff") ask users to "be responsible with the use of this data" and, for anything public, to
-"acknowledge the source". We acknowledge **Metrica Sports** as the source here and in the
-repository README. We do not redistribute the data: it is downloaded from Metrica's own
-repository (`metrica-sports/sample-data`) at a pinned commit and kept outside ours, and it is
-used only to fit and tune our settings.
+**Rights:** our written permission to use these games is the README of Metrica's public GitHub
+repository (`metrica-sports/sample-data`, `README.md`, read at the pinned commit `e706dd5`; the
+repository has no separate licence file). Metrica Sports publishes these games there openly, "to
+provide some sample data to play around with to the broader football analytics community". The
+repository's terms ("Legal stuff") ask users to "be responsible with the use of this data" and,
+for anything public, to "acknowledge the source". We acknowledge **Metrica Sports** as the source
+here and in the repository README. We do not redistribute the data: it is downloaded from
+Metrica's own repository (`metrica-sports/sample-data`) at a pinned commit and kept outside ours,
+and it is used only to fit and tune our settings.
 
-**Nothing from the provided game.** Nothing is fitted or tuned on the public five minutes, the
-private ground truth or the video (organisers' clarification, Nov 2026). The only things ever run
-on the provided game are pass/fail checks (format validator, determinism) and aggregate counts
-(possessions per 90 minutes, share of dead frames), which were compared with the practice games
-but never used to choose a setting.
+**Nothing fitted or tuned on the provided game.** No setting is fitted or tuned on the provided
+game: not on the public five minutes, the private ground truth or the video (organisers'
+clarification, Nov 2026). What has been run on it is pass/fail checks (format validator,
+determinism) and label-free aggregate measurements of its tracking, set beside the same numbers
+on the practice games: possessions per 90 minutes, share of dead frames, share of frames without
+a ball, how often the ball's path bends, how far the nearest player is from the ball, and how
+many touches the detectors find. No number was tuned against these aggregates, but they did
+inform design choices, and we list them:
+- *The bench's ball hiding and tracker levels* (below). The provided game has no ball on about
+  41% of graded frames, and the organisers say it is often missing in live play; from that we
+  reasoned the assumed 25% of live frames without a ball (a middle value, checked at 15% and
+  35%). The bend-based touch detector found 11 touches per 90 minutes on the provided game
+  against 1,300–1,600 on the practice games, which led to blurring the practice games' ball. Its
+  ball still bent less often than at any blur level, which led to the strongly smoothed level.
+  Player position error was added at every level, and its largest level (1 m) was checked to
+  give about the gap in ball-to-nearest-player distance measured on the provided game (median
+  about 1.9 m against 0.7–1.4 m on the practice games). The values of the levels are generic,
+  set by reasoning about trackers, not fitted.
+- *Decision (b): a fixed, untuned threshold for a stoppage when the ball is missing.* With a
+  threshold tuned on the practice games, where the ball goes missing almost only at stoppages,
+  the decoders called about 91% of the provided game's ball-less frames dead. On ball-less frames
+  a stoppage is therefore called only if the players' motion says dead is more likely than not
+  (threshold 0, never tuned), a choice made by reasoning that scores about 0.04–0.05 lower on the
+  bench.
+- *Carrier touches* (section 1). The bend-based detector found about 290 touches per 90 minutes
+  on the provided game against about 1,800 on the bench, so touches are also found from changes
+  of the ball's carrier, which need no bend (1,200–1,360 per 90 minutes on the bench, 1,295 on
+  the provided game).
 
-**Split.** Games 1 and 3 are the tuning games; Game 2 is held out and scored once, at the final
-choice between variants. Everything with a number in it was fitted or tuned on Games 1 and 3
-only: the two per-frame logistic models (dead-ball and team log-odds, `tools/fit_evidence.py`,
-written to `evidence_models.py` as constants), every labeller's settings (`tools/tune_v1.py`,
-`tools/tune.py`) and the abstention policy (`tools/tune_abstain.py`). Building the submission
-therefore needs no external data at all.
+**Split.** Games 1 and 3 are the tuning games; Game 2 is held out: nothing was fitted or tuned on
+it. It has been scored before, though. During development, on the earlier bench, the baseline
+`v0` and the labellers `v1`, `v2` and `v3` were scored on Game 2 (`v2` more than once, while it
+was being built), and one comparison there kept `v1` as the submission over `v2`; those scores
+are recorded in the code comments and the team checklist. The bench then changed (ball blur on
+4 Nov, player position error and the smoothed level on 5 Nov), and Game 2 has not been scored on
+the current bench. The final comparison between variants on it is scored once, at selection
+(`tools/selection.py`, `docs/selection.md`). Everything with a number in it was fitted or tuned
+on Games 1 and 3 only: the two per-frame logistic models (dead-ball and team log-odds,
+`tools/fit_evidence.py`, written to `evidence_models.py` as constants), every labeller's settings
+(`tools/tune_v1.py`, `tools/tune.py`) and the abstention policy (`tools/tune_abstain.py`).
+Building the submission therefore needs no external data at all.
 
 **Making the external games look like our tracking.** Metrica's tracking is far cleaner than the
 automatic tracking of the provided game, so the bench degrades it before any score is taken
@@ -130,7 +167,8 @@ ball's path is smoothed and given position noise at four generic "tracker levels
 smoothing, 2–10 cm of noise), because Metrica's ball is drawn as straight lines between key
 points while an automatic tracker smooths it; (3) players get 0.3–1.0 m of slowly drifting
 position error. Settings are tuned on the mean over the four levels and must hold at each one.
-The levels were set by reasoning about trackers, not fitted to the provided game.
+The levels' values were set by reasoning about trackers, not fitted to the provided game; the
+reasons the bench needed them came from the label-free comparisons listed above.
 
 ## 4. Possession rules implemented
 
@@ -153,26 +191,27 @@ not tuned), mapped onto Metrica's event types:
   provided game.
 
 **In the labeller (`v4`):**
-- *Loose balls.* Two "loose" states per team. A loose ball keeps the label of the team that had it
-  last, so a deflection, a block, a clearance picked up by the same team or an aerial duel without
-  control is not a change.
+- *Loose balls.* One "loose" state per team, beside its "in control" state. A loose ball keeps
+  the label of the team that had it last, so a deflection, a block, a clearance picked up by the
+  same team or an aerial duel without control is not a change.
 - *Changes of possession* are built into the model's structure: control of one team can never pass
   directly to control of the other. The ball goes loose first (still that team's label), and only
   then can the other team win it, at a tuned turnover cost.
 - *Challenges and single touches.* A touch is detected from the ball's path (a bend with a player
   within reach) or from a change of the ball's carrier (a different player with the ball at their
-  feet). A touch confirmed by a same-team next touch (pass chain) or by holding the ball counts as
-  control. A lone touch by the other team mostly counts as a change too: tuning chose weights
-  that let one clear touch switch possession, because on the external games a lone detected touch
-  is usually a real interception whose next touch was not seen. Forbidding that costs 0.007
-  spellF1 on the bench. It is the one place where we lean away from the letter of "a touch
-  without control is not a change".
+  feet). A touch confirmed by a same-team next touch within a second (pass chain) counts as
+  control; confirmation by holding the ball is switched off in the tuned settings. A lone touch
+  by the other team mostly counts as a change too: tuning chose weights that let one clear touch
+  switch possession, because on the external games a lone detected touch is usually a real
+  interception whose next touch was not seen. Forbidding that costs 0.007 spellF1 on the bench.
+  It is the one place where we lean away from the letter of "a touch without control is not a
+  change".
 - *Restarts.* A dead ball can only be followed by a team in control, never by a loose ball, and a
   half never starts loose. Which team restarts is decided by the evidence after the whistle
   (nearest players, team shape, the first touches).
 - *Dead balls.* A stoppage state with its own entry and exit costs; decoded stoppages shorter than
   3 s are given to the team around them. Where the ball is not tracked only the players' motion
-  can say "dead", with a fixed, untuned threshold (decision (b), section 2).
+  can say "dead", with a fixed, untuned threshold (decision (b), section 3).
 - *Match-level rules.* The organisers' second-half pre-kick-off window (frames 110,808–113,741)
   is always `D`; frames outside the two halves are `X`.
 - *Abstention.* `X` on graded frames is implemented (`espadas/abstain.py`: long ball-less gaps
@@ -185,6 +224,21 @@ blips shorter than 4 s and live blips shorter than 1 s removed; the possessor is
 nearest player within 2 m; possession passes only once the other team has been that evidence on
 70% of the last second, dated back to the old team's last evidence frame; a loose or unseen ball
 stays with the last team; after a stoppage, whoever dominates the first second.]
+
+[If `v3` is the submitted variant, replace the `v4` block with: a frame is dead when the Phase 5
+dead score is above a tuned threshold (with the ball tracked) or, without a ball, when the
+players' motion says dead is more likely than not (decision (b)), with stoppages shorter than 2 s
+dropped and live spells shorter than 1 s between stoppages made dead. Who has the ball is a
+running sum of the evidence against the current team: the Phase 5 home score, capped per frame,
+plus a pulse at every touch, found only from a bend in the ball's path with a player within
+1.5 m (20 for a touch confirmed by a same-team next touch within a second or by the same player
+staying within 3 m of the ball for the next 2 s, 30 for any other touch). Evidence for the
+current team drains the sum, never below zero; possession passes once the sum reaches 60, dated
+back to when it last started from zero, so two touches by the other team switch possession on
+their own and one does not. Weak or missing evidence changes nothing, so a loose or unseen ball
+stays with the last team, while during ball gaps the team-shape and pressing clues still count.
+After a stoppage, the sign of the evidence over the first second decides, else the team that had
+it before the stoppage keeps it.]
 
 ## 5. Limitations
 
@@ -202,7 +256,10 @@ stays with the last team; after a stoppage, whoever dominates the first second.]
 - **Possession count.** On the provided game `v4` gives about 246 possessions per 90 minutes
   (diagnostic only; the practice games have 254–377), so some short possessions are probably
   merged into their neighbours. `v1` gives 301 but collapses on the realistic tracker levels
-  (0.43–0.45 spellF1).
+  (0.43–0.45 spellF1). `v1`'s settings date from 3 Nov: they were tuned on the earlier bench,
+  before the ball blur and player error, and were not re-tuned on the final one, while `v3` and
+  `v4` were. So these numbers compare the candidates as they stand, not what each method could
+  reach with equal tuning.
 - **Little tuning data.** Two tuning games and one held-out game. `v3`'s held-out gain was a
   seventh of its tuning gain, so some settings are overfitted. Who has the ball is the bottleneck,
   not stoppages: on the practice games perfect team calls would lift spellF1 to about 0.86,
@@ -250,5 +307,10 @@ checks on the file.
 
 Re-running the tuning is not needed to build the file. `python tools/fetch_metrica.py` downloads
 the external games outside the repository, `python -m espadas.external.bench --labeler v1 v3 v4
---games 1 3` scores them, and `tools/fit_evidence.py`, `tools/tune_v1.py`, `tools/tune.py` and
-`tools/tune_abstain.py` regenerate the constants; see the README's "External data" section.
+--games 1 3` scores them, and `tools/fit_evidence.py`, `tools/tune.py` and
+`tools/tune_abstain.py` regenerate the evidence models, the `v3` and `v4` settings and the
+abstention setting, all fitted on the final bench. `v1` is the exception: its settings date from
+3 Nov and were tuned with `tools/tune_v1.py` on the earlier bench, before the ball blur and
+player error; it was not re-tuned on the final bench, so re-running `tools/tune_v1.py` now need
+not give the shipped values. (`v2`, not a candidate, was last tuned on the 4 Nov bench.) See the
+README's "External data" section.

@@ -14,8 +14,9 @@ the evidence for it starts, and weak stretches are filled in from what comes bef
 
 A loose ball stays with the last team in control, as the official rules say (a deflection or a
 block is not a change of possession). The loose states exist so the model can be in "nobody has
-it right now" without that counting as a turnover, and so a turnover is cheaper through a loose
-ball (loose(T) -> ctrl(other)) than as a direct ctrl(T) -> ctrl(other) tackle.
+it right now" without that counting as a turnover, and because a turnover must pass through a
+loose ball: loose(T) -> ctrl(other) is the only way possession changes (the direct
+ctrl(T) -> ctrl(other) tackle was removed in 7.11a, see Transitions).
 
 **Evidence per frame** (`emissions()`, log-scores; only differences between states matter):
 - Dead: Phase 5 dead log-odds, smoothed over +/- `dead_smooth` frames. On frames *with* a ball
@@ -52,8 +53,9 @@ PR #3 by Nilay), so no setting can break them:
 Each half is decoded on its own (START: control or dead, equal prior); then an optional duration clean-up
 (`min_dead`, `min_alive`, as in v1/v2) removes stoppages and live spells too short to be real. Frames outside the halves are D (finalise()
 and the bench turn them into X). Tracking only, no Smart Tagging. Settings tuned by
-tools/tune.py --labeler v4 --skip-heldout on Metrica 1 and 3 over light/medium/heavy ball blur;
-never on our match. The held-out Game 2 is scored only at selection (Phase 9).
+tools/tune.py --labeler v4 --skip-heldout on Metrica 1 and 3 over the four tracker levels
+(degrade.TRACKER_LEVELS: light/medium/heavy/smooth ball blur plus player position error); never
+on our match. The held-out Game 2 is scored only at selection (Phase 9).
 """
 
 import numpy as np
