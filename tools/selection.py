@@ -6,16 +6,28 @@
     python tools/selection.py               # THE one shot: score, print, write docs/selection.md
     python tools/selection.py --again       # a deliberate re-run: appends a new dated section
 
-Game 2 is held out: nothing was ever tuned on it, and the plan is to score it ONCE, at selection,
-for the final candidates only. This tool makes that one shot complete (every candidate, with and
-without the X policy, at every tracker level and ball-hiding level, plus the tuning games for
-reference), reproducible (same bench, fixed seeds) and written down with the commit it ran on.
+Game 2 is held out: nothing was ever tuned on it. v1-v3 were scored on it during development on
+the earlier bench (checklist 4.10, 5, 6); it has not been scored on the current bench, and the
+final comparison on it is scored ONCE, here, for the final candidates only. This tool is the only
+code that loads it by default (bench.available refuses it otherwise). It makes that one shot
+complete (every candidate, with and without the X policy, at every tracker level and
+ball-hiding level, plus the tuning games for reference), reproducible (same bench, fixed seeds)
+and written down with the commit it ran on.
+
+The once-rule: the tuning games are scored first. Immediately before the first held-out scoring
+the tool writes a dated "run started" marker to the report; from then on the report exists, and
+that is the lock. The results are appended when the run finishes. A run interrupted after that
+point (crash, Ctrl-C) leaves the marker without results: the one shot is spent, and a re-run
+needs --again. A run interrupted while still on the tuning games leaves nothing.
 
 How to read the result: spellF1 decides the ranking; the headline is the mean over the four
 tracker levels at 25% live ball hidden, with 15% / 35% as robustness checks. macroF1 is the
 official tie-break and the only number the X policy can move (the scorer fills X with the
 neighbouring label before matching possessions, so spellF1 cannot change). Possession counts
-show over- or under-segmentation. Differences below NOISE are not evidence.
+show over- or under-segmentation. Margins are compared with the organisers' guidance bands for
+one full match (SPELL_BAND for spellF1, from the vendored scorer; MACRO_BAND for macroF1). Those
+are not noise measured on this bench, and the tracker levels are degraded views of the same
+games, not independent samples.
 """
 
 import argparse
@@ -38,8 +50,14 @@ HIDES = (0.15, 0.25, 0.35)
 HEADLINE_HIDE = degrade.LIVE_MISSING
 LEVELS = degrade.TRACKER_LEVELS
 GAMES = bench.TUNING + bench.HELD_OUT        # tuning games first, held-out last
-NOISE = 0.01                                 # the bench's noise level (tools/tune_abstain.py)
+# The organisers' guidance for one full match (vendored possession_metrics.py), not noise measured
+# on this bench: SPELL_NOISE_BAND for spellF1; "macro-F1 gaps below roughly 0.01 are segment-level
+# noise" (its module docstring) for macroF1.
+SPELL_BAND = config.pm.SPELL_NOISE_BAND
+MACRO_BAND = 0.01
 REPORT = os.path.join(ROOT, "docs", "selection.md")
+HEADER = ("# Selection on held-out Metrica Game 2\n\nWritten by `tools/selection.py`. Each run "
+          "appends a section; never edit the numbers by hand.\n\n")
 METRICS = ("spell_f1", "macro_f1", "n_pred", "n_gt", "n_x")
 
 
@@ -66,12 +84,18 @@ def score_one(game, candidate, abstain_on, hide, level):
             "n_x": int(r["n_abstain_on_graded"])}
 
 
-def run(specs, games):
-    """Score every spec in order; games = {number: loaded game}. Prints one line per scoring."""
+def run(specs, games, before_heldout=None):
+    """Score every spec in order; games = {number: loaded game}. Prints one line per scoring.
+
+    before_heldout, if given, is called once, immediately before the first held-out scoring
+    (the once-rule's lock)."""
     results = []
     print("{:<6}{:<5}{:<6}{:<7}{:<8}{:>9}{:>9}{:>7}{:>7}{:>7}".format(
         "cand", "X", "game", "hide", "level", "spellF1", "macroF1", "pred", "ref", "X-fr"))
     for candidate, abstain_on, number, hide, level in specs:
+        if before_heldout is not None and number in bench.HELD_OUT:
+            before_heldout()
+            before_heldout = None
         r = score_one(games[number], candidate, abstain_on, hide, level)
         r.update(candidate=candidate, abstain=abstain_on, game=number, hide=hide, level=level)
         results.append(r)
@@ -125,8 +149,24 @@ def _ranked(summary, hide, abstain_on=False):
     return sorted(rows, key=lambda x: (-x[1], x[0]))
 
 
-def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, noise=NOISE):
-    """Plain sentences about the held-out result: leader, margin, levels, the X check, overfit."""
+def _versus(margin, band):
+    """How a difference compares with a guidance band, in words."""
+    if abs(margin) < band:
+        return "within"
+    return "above" if margin > 0 else "a drop larger than"
+
+
+def bands_note(spell_band=SPELL_BAND, macro_band=MACRO_BAND):
+    return ("The bands ({:.2f} spellF1, {:.2f} macroF1) are the organisers' guidance for one full "
+            "match (vendored possession_metrics.py), not noise measured on this bench; the "
+            "tracker levels are degraded views of the same games, not independent samples, so "
+            "agreement across levels is not extra evidence.".format(spell_band, macro_band))
+
+
+def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, spell_band=SPELL_BAND,
+            macro_band=MACRO_BAND):
+    """Plain sentences about the held-out result: leader, margin, levels, the X check, overfit,
+    and what the guidance bands are."""
     lines = []
     ranked = _ranked(summary, hide)
     if not ranked:
@@ -137,8 +177,8 @@ def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, noise=NOISE):
     if len(ranked) > 1:
         runner, second = ranked[1]
         margin = best - second
-        line += ", ahead of {} by {:.3f}, {} the noise level ({:.2f})".format(
-            runner, margin, "above" if margin >= noise else "within", noise)
+        line += (", ahead of {} by {:.3f}, {} the organisers' spellF1 guidance band "
+                 "({:.2f})").format(runner, margin, _versus(margin, spell_band), spell_band)
         by_level = {c: s["heldout"][hide]["by_level"] for (c, a), s in summary.items()
                     if not a and hide in s["heldout"]}
         won = [l for l in levels if l in by_level[leader]
@@ -157,8 +197,11 @@ def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, noise=NOISE):
         else:
             verdict = "WARNING: X changed spellF1 for {} by {:+.4f} (it must not)".format(
                 candidate, b["spell_f1"] - a["spell_f1"])
-        lines.append("{}; macroF1 {:+.3f} ({:.3f} -> {:.3f}), X on {:.0f} graded frames.".format(
-            verdict, b["macro_f1"] - a["macro_f1"], a["macro_f1"], b["macro_f1"], b["n_x"]))
+        gain = b["macro_f1"] - a["macro_f1"]
+        lines.append("{}; macroF1 {:+.3f} ({:.3f} -> {:.3f}), {} the organisers' macroF1 "
+                     "guidance band ({:.2f}), X on {:.0f} graded frames.".format(
+                         verdict, gain, a["macro_f1"], b["macro_f1"],
+                         _versus(gain, macro_band), macro_band, b["n_x"]))
 
     for candidate, held in ranked:
         tune = summary[(candidate, False)]["tuning"].get(hide)
@@ -166,6 +209,7 @@ def reading(summary, hide=HEADLINE_HIDE, levels=LEVELS, noise=NOISE):
             lines.append("{}: tuning-game mean {:.3f} vs held-out {:.3f} ({:+.3f}); a large drop "
                          "means the settings are overfitted to the tuning games.".format(
                              candidate, tune["spell_f1"], held, held - tune["spell_f1"]))
+    lines.append(bands_note(spell_band, macro_band))
     return lines
 
 
@@ -175,18 +219,35 @@ def _cell(block, metric, fmt="{:.3f}"):
     return fmt.format(block[metric]) if block else "–"
 
 
-def render(summary, hides=HIDES, levels=LEVELS, noise=NOISE, meta=None):
-    """Markdown: provenance, summary table, per-level table, reading."""
+def heading(meta):
+    return "## Selection run: {}, commit `{}`{}".format(
+        meta.get("date", "?"), meta.get("commit", "?"),
+        " **(uncommitted changes in the working tree)**" if meta.get("dirty") else "")
+
+
+def _x_setting(candidates):
+    """What "X on" applies: abstain.resolve(candidate, force=True), as `espadas.run --abstain`."""
+    settings = {c: abstain.resolve(c, force=True) for c in candidates}
+    if all(p == abstain.SETTING for p in settings.values()):
+        return "`abstain.SETTING` = `{}`".format(abstain.SETTING)
+    return "; ".join("{}: `{}`".format(c, p) for c, p in sorted(settings.items()))
+
+
+def render(summary, hides=HIDES, levels=LEVELS, meta=None, spell_band=SPELL_BAND,
+           macro_band=MACRO_BAND, with_heading=True):
+    """Markdown: provenance heading (unless with_heading is False), summary table, per-level
+    table, reading."""
     meta = meta or {}
     headline = HEADLINE_HIDE if HEADLINE_HIDE in hides else hides[len(hides) // 2]
     others = [h for h in hides if h != headline]
-    out = ["## Selection run: {}, commit `{}`{}".format(
-        meta.get("date", "?"), meta.get("commit", "?"),
-        " **(uncommitted changes in the working tree)**" if meta.get("dirty") else ""), ""]
+    out = [heading(meta), ""] if with_heading else []
     out.append("Candidates scored on held-out Metrica Game 2 and, for reference, on the tuning "
-               "games (1 + 3). spellF1 = mean over the tracker levels {}. X = `abstain.SETTING` "
-               "= `{}`. Noise level {:.2f}: smaller differences are not evidence.".format(
-                   " / ".join(levels), abstain.SETTING, noise))
+               "games (1 + 3). spellF1 = mean over the tracker levels {}. X on = what `python -m "
+               "espadas.run --abstain` builds (`abstain.resolve`): {}. Guidance bands {:.2f} "
+               "spellF1 / {:.2f} macroF1: smaller differences are not evidence (see the "
+               "reading).".format(" / ".join(levels),
+                                  _x_setting(sorted({c for c, _ in summary})),
+                                  spell_band, macro_band))
     out.append("")
     out.append("### Summary (spellF1, mean over tracker levels)")
     out.append("")
@@ -224,28 +285,39 @@ def render(summary, hides=HIDES, levels=LEVELS, noise=NOISE, meta=None):
     out.append("")
     out.append("### Reading")
     out.append("")
-    out += ["- " + line for line in reading(summary, headline, levels, noise)]
+    out += ["- " + line for line in reading(summary, headline, levels, spell_band, macro_band)]
     out.append("")
     out.append("**Decision:** _(fill in: which variant, X on or off, and why)_")
     out.append("")
     return "\n".join(out)
 
 
-def write_report(path, text, again=False):
-    """Create the report, or append a section to it if `again`; never overwrite silently."""
+def start_report(path, meta, again=False):
+    """Write the dated "run started" marker: the once-rule's lock. Called immediately before the
+    first held-out scoring. Creates the report, or appends a new section if `again`; never
+    overwrites. Flushed to disk before returning, so the lock survives a crash or Ctrl-C."""
     exists = os.path.exists(path)
     if exists and not again:
         raise AlreadyRun("{} exists: the one-shot selection has been run. Use --again to append "
                          "a new section (and say in the decision why a second run was needed)."
                          .format(path))
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    marker = ("{}\n\nRun started {}, commit `{}`, working tree {}. Held-out scoring of Game 2 "
+              "begins now. If no results follow below, the run was interrupted after held-out "
+              "scoring began, and the one shot is spent.\n\n").format(
+                  heading(meta), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                  meta.get("commit", "?"),
+                  "with uncommitted changes" if meta.get("dirty") else "clean")
     with open(path, "a" if exists else "w", encoding="utf-8") as handle:
-        if not exists:
-            handle.write("# Selection on held-out Metrica Game 2\n\nWritten by "
-                         "`tools/selection.py`. Each run appends a section; never edit the "
-                         "numbers by hand.\n\n")
-        else:
-            handle.write("\n")
+        handle.write("\n" if exists else HEADER)
+        handle.write(marker)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def finish_report(path, text):
+    """Append the results below the run-started marker."""
+    with open(path, "a", encoding="utf-8") as handle:
         handle.write(text)
 
 
@@ -310,20 +382,34 @@ def main(argv=None):
         return 1
 
     config.seed_everything()
+    meta = provenance()
     # The one place in the repository allowed to load the held-out game by default: a real run.
     loaded = dict(bench.available(games, heldout=not args.smoke))
     missing = [g for g in games if g not in loaded]
     if missing:
         print("STOP: game(s) {} not available; run tools/fetch_metrica.py first.".format(missing))
         return 1
-    results = run(specs, loaded)
+
+    locked = []
+
+    def lock():
+        start_report(args.out, meta, again=args.again)
+        locked.append(True)
+        print("lock written: {} (run started; from here the one shot is spent even if the run "
+              "is interrupted)".format(args.out))
+
+    results = run(specs, loaded, before_heldout=None if args.smoke else lock)
     summary = summarise(results, tuning=bench.TUNING, heldout=bench.HELD_OUT[0])
-    text = render(summary, tuple(args.hides), tuple(args.levels), NOISE, provenance())
-    print("\n" + text)
+    hides, levels = tuple(args.hides), tuple(args.levels)
+    print("\n" + render(summary, hides, levels, meta))
     if args.smoke:
         print("smoke run: nothing written, held-out game untouched.")
         return 0
-    write_report(args.out, text, again=args.again)
+    if not locked:            # a real run always scores the held-out game; never lose results
+        lock()
+    finish_report(args.out, "Completed {}: all {} scorings finished.\n\n{}".format(
+        datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(results),
+        render(summary, hides, levels, meta, with_heading=False)))
     print("written: {}".format(args.out))
     return 0
 
