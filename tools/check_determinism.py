@@ -3,7 +3,8 @@
     python tools/check_determinism.py
 
 Both runs bypass the tracking cache, so this is the slow, honest version of "a clean rebuild
-gives the same file". Prints only hashes.
+gives the same file". It builds the plain no-flag command, which is the submitted file, X policy
+included when abstain.PARAMS sets one. Prints only hashes.
 """
 
 import os

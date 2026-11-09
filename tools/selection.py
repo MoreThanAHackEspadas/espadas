@@ -56,14 +56,11 @@ def plan(candidates=CANDIDATES, abstain=ABSTAIN, hides=HIDES, levels=LEVELS, gam
 
 
 def score_one(game, candidate, abstain_on, hide, level):
-    """Score one candidate on one degraded view of one game; the X setting is applied only here."""
-    old = abstain.PARAMS.get(candidate)
-    try:
-        if abstain_on:
-            abstain.PARAMS[candidate] = abstain.SETTING
-        r = bench.score(candidate, game, hide_ball=hide, blur=level, use_abstain=abstain_on)
-    finally:
-        abstain.PARAMS[candidate] = old
+    """Score one candidate on one degraded view of one game, with the X policy forced on or off.
+
+    "On" goes through abstain.resolve like `python -m espadas.run --abstain`, so it is exactly
+    what the plain build gives once abstain.PARAMS[candidate] = abstain.SETTING."""
+    r = bench.score(candidate, game, hide_ball=hide, blur=level, use_abstain=bool(abstain_on))
     return {"spell_f1": float(r["spell_f1_mean"]), "macro_f1": float(r["macro_f1"]),
             "n_pred": int(r["n_pred_spells"]), "n_gt": int(r["n_gt_spells"]),
             "n_x": int(r["n_abstain_on_graded"])}

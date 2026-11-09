@@ -19,6 +19,11 @@ frames), so it works for any labeler:
 
 Settings are per labeler (PARAMS[labeler]); None = no X on graded frames. Tuned by
 tools/tune_abstain.py on the tuning games only; never on our match.
+
+Which setting a build uses is decided in one place, resolve(), shared by espadas.run, the bench
+and tools/selection.py: PARAMS[labeler] alone decides what `python -m espadas.run` does with no
+flag; --abstain forces the policy on (SETTING when PARAMS[labeler] is None), --no-abstain forces
+it off.
 """
 
 import numpy as np
@@ -33,7 +38,9 @@ import numpy as np
 # stoppages); on the live ones our guess is right as often as wrong (6% / 6%). The gain is the
 # Metrica "no ball = stoppage" pattern again, which decision (b) (checklist 6.6) refused to rely
 # on because our ball is often missing in live play. Kept in code (spellF1-neutral, tested) so
-# the team can switch it on at selection: PARAMS["v4"] = SETTING.
+# the team can switch it on at selection: set PARAMS[<chosen labeler>] = SETTING here, and the
+# plain `python -m espadas.run` (no flag) applies it. That build is exactly the "X on" variant
+# tools/selection.py scores (both go through resolve()). No flag is needed or wanted.
 SETTING = {"weak": np.inf, "min_gap": 200, "edge": 1}
 PARAMS = {"v1": None, "v2": None, "v3": None, "v4": None}
 
@@ -42,6 +49,21 @@ GRID = {
     "min_gap": [1, 12, 25, 50, 100, 200, 300, 500, 750, 1000, 1500],
     "edge": [1, 6, 12, 25, 50],
 }
+
+
+def resolve(labeler, force=None):
+    """The X setting to apply for `labeler`, or None for no X on graded frames.
+
+    force None (no flag): PARAMS[labeler] decides.
+    force True (--abstain): PARAMS[labeler], or SETTING if that is None.
+    force False (--no-abstain): None.
+    """
+    if force is False:
+        return None
+    p = PARAMS.get(labeler)
+    if p is None and force:
+        return SETTING
+    return p
 
 
 def runs(mask):

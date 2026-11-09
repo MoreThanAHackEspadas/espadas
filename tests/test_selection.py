@@ -6,6 +6,7 @@ Every test here works on made-up scores. No external game is ever read.
 import importlib.util
 import os
 
+import numpy as np
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,22 +114,53 @@ def test_report_refuses_a_second_run_unless_again(tmp_path):
     assert "## run 1" in text and "## run 2" in text
 
 
-def test_x_setting_is_applied_only_while_scoring_and_then_restored(monkeypatch):
+def test_score_one_forces_x_on_or_off_and_leaves_params_alone(monkeypatch):
     s = load()
-    seen = {}
+    seen = []
 
-    def fake_score(name, game, hide_ball=None, blur=None, use_abstain=False):
-        seen["params"] = dict(s.abstain.PARAMS)
-        seen["use_abstain"] = use_abstain
+    def fake_score(name, game, hide_ball=None, blur=None, use_abstain=None):
+        seen.append((use_abstain, dict(s.abstain.PARAMS)))
         return {"spell_f1_mean": 0.5, "macro_f1": 0.8, "n_pred_spells": 1, "n_gt_spells": 1,
                 "n_abstain_on_graded": 0}
 
     monkeypatch.setattr(s.bench, "score", fake_score)
-    monkeypatch.setitem(s.abstain.PARAMS, "v4", None)
+    before = dict(s.abstain.PARAMS)
     s.score_one(game=object(), candidate="v4", abstain_on=True, hide=0.25, level="light")
-    assert seen["use_abstain"] is True
-    assert seen["params"]["v4"] == s.abstain.SETTING
-    assert s.abstain.PARAMS["v4"] is None
+    s.score_one(game=object(), candidate="v4", abstain_on=False, hide=0.25, level="light")
+    assert [force for force, _ in seen] == [True, False]
+    assert all(params == before for _, params in seen)       # nothing injected while scoring
+    assert s.abstain.PARAMS == before
+
+
+def test_bench_x_on_is_exactly_what_the_build_gives_once_params_is_set(monkeypatch):
+    """What selection scores as "X on" (bench.score(use_abstain=True)) is the no-flag result
+    after abstain.PARAMS[candidate] = SETTING; "X off" is the no-flag result with None."""
+    s = load()
+    bench, abstain = s.bench, s.abstain
+    n = 3000
+    graded = np.ones(n, dtype=bool)
+    graded[:100] = False
+    present = np.ones(n, dtype=bool)
+    present[500:900] = False                     # 400 frames without a ball inside an H spell
+    labels_seen = []
+    monkeypatch.setattr(bench, "setup", lambda game, hide, blur: (None, {}, graded))
+    monkeypatch.setitem(bench.labelers.LABELERS, "v4", lambda tracking: np.full(n, "H"))
+    monkeypatch.setattr(bench.v2, "features",
+                        lambda tracking: {"present": present, "team_lo": np.zeros(n)})
+    monkeypatch.setattr(bench, "evaluate",
+                        lambda gt, labels, graded: labels_seen.append(np.array(labels)) or {})
+
+    monkeypatch.setitem(abstain.PARAMS, "v4", None)
+    bench.score("v4", game=None, use_abstain=True)
+    bench.score("v4", game=None)
+    monkeypatch.setitem(abstain.PARAMS, "v4", abstain.SETTING)
+    bench.score("v4", game=None)
+    bench.score("v4", game=None, use_abstain=False)
+    x_on, default_off, default_params, forced_off = labels_seen
+    assert np.any(x_on[graded] == "X")
+    assert np.array_equal(x_on, default_params)
+    assert not np.any(default_off[graded] == "X")
+    assert np.array_equal(default_off, forced_off)
 
 
 def test_smoke_mode_scores_only_tuning_games_and_writes_no_report(monkeypatch, tmp_path):

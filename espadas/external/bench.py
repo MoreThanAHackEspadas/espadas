@@ -78,14 +78,18 @@ def evaluate(gt_codes, labels, graded):
     return pm.evaluate(gt_codes, pm.label_codes(pred))
 
 
-def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT, use_abstain=False):
+def score(labeler_name, game, hide_ball=None, blur=degrade.BLUR_DEFAULT, use_abstain=None):
+    """Official metrics of one labeler on one degraded view of one game.
+
+    use_abstain follows espadas.run (abstain.resolve): None = abstain.PARAMS[labeler] decides, as
+    in the no-flag build; True / False force the X policy on / off."""
     gt_codes, tracking, graded = setup(game, hide_ball, blur)
     labels = np.asarray(labelers.LABELERS[labeler_name](tracking), dtype="<U1").copy()
-    if use_abstain:                      # Phase 8.4, applied after the ungraded X as in run.py
+    setting = abstain.resolve(labeler_name, use_abstain)
+    if setting is not None:              # Phase 8.4, applied after the ungraded X as in run.py
         labels[~graded] = "X"
         f = v2.features(tracking)
-        labels = abstain.apply(labels, f["present"], f["team_lo"],
-                               abstain.PARAMS.get(labeler_name))
+        labels = abstain.apply(labels, f["present"], f["team_lo"], setting)
     return evaluate(gt_codes, labels, graded)
 
 
@@ -124,7 +128,11 @@ def main(argv=None):
                         help="ball blur level, like an automatic tracker (default {})".format(
                             degrade.BLUR_DEFAULT))
     parser.add_argument("--abstain", action="store_true",
-                        help="apply the X policy (abstain.PARAMS) on graded frames")
+                        help="force the X policy on graded frames on, as `espadas.run "
+                             "--abstain` (abstain.PARAMS[labeler], or abstain.SETTING if None). "
+                             "Without a flag, abstain.PARAMS decides, as in the plain build")
+    parser.add_argument("--no-abstain", action="store_true",
+                        help="force the X policy off (wins over --abstain)")
     args = parser.parse_args(argv)
     held = sorted(set(args.games) & set(HELD_OUT))
     if held and not args.heldout:
@@ -135,6 +143,7 @@ def main(argv=None):
     config.seed_everything()
 
     games = available(args.games, heldout=args.heldout)
+    force = False if args.no_abstain else True if args.abstain else None
     print("ball blur {}, hidden to {} missing on live frames".format(
         args.blur, "{:.0%}".format(args.hide_ball) if args.hide_ball >= 0 else "no extra"))
     print("\n{:<10}{:<10}{:<9}{:>9}{:>10}{:>9}{:>8}{:>8}{:>8}".format(
@@ -142,7 +151,7 @@ def main(argv=None):
     for name in args.labeler:
         for n, game in games:
             r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None, args.blur,
-                      args.abstain)
+                      force)
             split = "tune" if n in TUNING else "HELDOUT"
             print("{:<10}{:<10}{:<9}{:>9.4f}{:>10.4f}{:>9.4f}{:>8}{:>8}{:>8}".format(
                 name, game["name"], split, r["spell_f1_mean"], r["spell_f1_at_headline"],

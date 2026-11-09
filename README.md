@@ -55,6 +55,13 @@ python -m espadas.run                   # -> out/espadas.csv (labeler v1), valid
 The first run parses the tracking (a couple of minutes) and caches arrays in `cache/`. The cache
 never changes the output.
 
+The submitted file is always this no-flag build. Whether it has `X` on graded frames (the
+Phase 8.4 abstention policy, `espadas/abstain.py`) is decided by `abstain.PARAMS[<labeler>]`
+alone: `None` (the current setting for every labeler) means no graded `X`; to ship the policy,
+set `abstain.PARAMS[<labeler>] = abstain.SETTING`. `--abstain` / `--no-abstain` force the policy
+on / off for experiments only; `--abstain` gives exactly the build that setting `PARAMS` would,
+and that is the "X on" variant `tools/selection.py` scores.
+
 ## Checks
 
 ```bash

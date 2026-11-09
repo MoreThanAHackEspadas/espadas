@@ -3,6 +3,10 @@
     export MTAH_DATA_DIR="/path/to/More Than A Hack 2027 - Initial Challenge - Dataset"
     python -m espadas.run                       # -> out/espadas.csv
 
+The submitted file is the no-flag build. Whether it has X on graded frames is decided by
+abstain.PARAMS[labeler] alone (abstain.resolve); --abstain / --no-abstain force the X policy on
+or off for experiments.
+
 Output is deliberately limited to pass/fail, the file path, the SHA-256 and label counts: no
 per-frame data is printed.
 """
@@ -27,7 +31,12 @@ def main(argv=None):
                              "useful for comparing against the organisers' baseline files")
     parser.add_argument("--no-cache", action="store_true", help="re-parse tracking from scratch")
     parser.add_argument("--abstain", action="store_true",
-                        help="X policy on graded frames (abstain.py, Phase 8.4; off by default)")
+                        help="force the X policy on graded frames on (abstain.py, Phase 8.4): "
+                             "abstain.PARAMS[labeler], or abstain.SETTING if that is None. "
+                             "Without a flag, abstain.PARAMS[labeler] alone decides")
+    parser.add_argument("--no-abstain", action="store_true",
+                        help="force the X policy off, whatever abstain.PARAMS says "
+                             "(wins over --abstain)")
     args = parser.parse_args(argv)
 
     config.seed_everything()
@@ -35,10 +44,11 @@ def main(argv=None):
     labels = labelers.LABELERS[args.labeler](tracking)
     if not args.raw:
         labels = write.finalise(labels)
-    if args.abstain:
+    force = False if args.no_abstain else True if args.abstain else None
+    setting = abstain.resolve(args.labeler, force)
+    if setting is not None:
         f = v2.features(tracking)
-        labels = abstain.apply(labels, f["present"], f["team_lo"],
-                               abstain.PARAMS.get(args.labeler))
+        labels = abstain.apply(labels, f["present"], f["team_lo"], setting)
 
     path = write.write_csv(args.out, labels)
     reason = write.validate(path)
