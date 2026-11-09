@@ -114,7 +114,8 @@ repository's terms ("Legal stuff") ask users to "be responsible with the use of 
 for anything public, to "acknowledge the source". We acknowledge **Metrica Sports** as the source
 here and in the repository README. We do not redistribute the data: it is downloaded from
 Metrica's own repository (`metrica-sports/sample-data`) at a pinned commit and kept outside ours,
-and it is used only to fit and tune our settings.
+and it is used only to fit and tune our settings (Games 1 and 3) and to compare the final
+candidates (Game 2).
 
 **Nothing fitted or tuned on the provided game.** No setting is fitted or tuned on the provided
 game: not on the public five minutes, the private ground truth or the video (organisers'
