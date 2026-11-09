@@ -256,6 +256,7 @@ BAR-ATH*
 *.tar
 *.tar.gz
 *.7z
+*.json
 
 # Markdown files (README.md and docs/*.md are kept; CLAUDE.md etc. stay local)
 *.md
@@ -265,3 +266,7 @@ BAR-ATH*
 # Local build output and caches (may contain derived match data)
 out/
 cache/
+
+# Local tool state (assistants, planning plugins); never part of the repository
+.claude/
+.superpowers/
