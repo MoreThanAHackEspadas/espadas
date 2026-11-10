@@ -39,27 +39,30 @@ def params_none(monkeypatch):
 
 # --------------------------------------------------------------------------- the default build
 
-def test_default_labeler_is_v1(build, monkeypatch):
-    # Intentional tripwire: it fails when the default changes. Update it (and the README's
-    # "(labeler v1)" line) at the freeze, when the selected variant becomes the default (11.1).
+def test_default_labeler_is_v4(build, monkeypatch):
+    # Intentional tripwire: it fails when the default changes. v4 is the selected variant
+    # (docs/selection.md, 10 Nov); update this and the README's "(labeler v4)" line together.
+    assert DEFAULT == "v4"
     called = []
-    original = labelers.LABELERS["v1"]
+    original = labelers.LABELERS["v4"]
 
     def spy(tracking):
-        called.append("v1")
+        called.append("v4")
         return original(tracking)
 
-    monkeypatch.setitem(labelers.LABELERS, "v1", spy)
+    monkeypatch.setitem(labelers.LABELERS, "v4", spy)
     build("--no-cache")
-    assert called == ["v1"]
+    assert called == ["v4"]
 
 
 def test_x_is_off_by_default_and_the_build_is_labeler_plus_finalise(build, bundle, tmp_path,
                                                                     monkeypatch, params_none):
     def no_extra_work(*args, **kwargs):
-        raise AssertionError("the default build must not compute the X policy's features")
+        raise AssertionError("the default build must not apply the X policy")
 
-    monkeypatch.setattr(run.v2, "features", no_extra_work)
+    # Guard the X branch itself: v4 (the default) computes v2.features as part of labelling, so
+    # patching those would trip on the labeler, not on the policy.
+    monkeypatch.setattr(run.abstain, "apply", no_extra_work)
     path = build("--no-cache")
     assert graded_x(path) == 0
     # byte for byte what the labeler plus finalise() give, nothing else

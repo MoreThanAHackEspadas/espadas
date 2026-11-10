@@ -19,9 +19,10 @@ import numpy as np
 
 from . import abstain, atd, config, labelers, v2, write
 
-# The labeler of the no-flag build, i.e. the submission. Changed only at the freeze (checklist
-# 11.1), together with tests/test_run.py::test_default_labeler_is_v1 and the README.
-DEFAULT_LABELER = "v1"
+# The labeler of the no-flag build, i.e. the submission: v4, chosen on 10 Nov by the
+# pre-registered rule (docs/decision_rule.md, docs/selection.md; checklist 9.3 / 11.1). Changed
+# only together with tests/test_run.py::test_default_labeler_is_v4 and the README.
+DEFAULT_LABELER = "v4"
 
 
 def main(argv=None):

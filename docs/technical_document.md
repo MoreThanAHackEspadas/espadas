@@ -45,8 +45,11 @@ provided tracking already gives positions, the detector would have to be trained
 data only, and the time was better spent on transfer between trackers, which turned out to be
 the real problem (sections 3 and 5).
 
-_[Selection pending (10–12 Nov): the variant below is the one leading on the tuning games; the
-final choice is made once on the held-out game and recorded in `docs/selection.md`.]_
+**The submitted variant is `v4`**, chosen on 10 Nov by a rule written and pushed before the one
+held-out comparison (`docs/decision_rule.md`): `v4` was the pre-registered choice and another
+candidate could replace it only by beating it on Game 2 by at least 0.04 spellF1, consistently
+across tracker levels. On Game 2 (mean over the four tracker levels, 25% live ball hidden) `v4`
+scored 0.533, `v3` 0.532 and `v1` 0.470, so `v4` stands (`docs/selection.md`).
 
 ### Sequence model (`v4`, Phase 7)
 
@@ -153,11 +156,11 @@ was being built), and one comparison there kept `v1` as the submission over `v2`
 are recorded in the code comments and the team checklist. The Phase 5 evidence models (fitted on
 Games 1 and 3 only) also had their per-frame accuracy reported on Game 2 during development: team
 0.89 (0.73 with the ball missing), dead 0.84. The bench then changed (ball blur on
-4 Nov, player position error and the smoothed level on 5 Nov), and Game 2 has not been scored on
-the current bench. The final comparison between variants on it is scored once, at selection
-(`tools/selection.py`, `docs/selection.md`). Everything with a number in it was fitted or tuned
-on Games 1 and 3 only: the two per-frame logistic models (dead-ball and team log-odds,
-`tools/fit_evidence.py`, written to `evidence_models.py` as constants), every labeller's settings
+4 Nov, player position error and the smoothed level on 5 Nov). On the current bench Game 2 was
+scored exactly once, on 10 Nov, by the selection comparison (`tools/selection.py`, results in
+`docs/selection.md`), after the decision rule was pushed; nothing was changed after it.
+Everything with a number in it was fitted or tuned on Games 1 and 3 only: the two per-frame
+logistic models (dead-ball and team log-odds, `tools/fit_evidence.py`, written to `evidence_models.py` as constants), every labeller's settings
 (`tools/tune_v1.py`, `tools/tune.py`) and the abstention policy (`tools/tune_abstain.py`).
 Building the submission therefore needs no external data at all.
 
@@ -221,28 +224,6 @@ not tuned), mapped onto Metrica's event types:
   strictly inside a decoded spell, never near a change) but is switched **off** in the submitted
   file; section 5 says why.
 
-[If `v1` is the submitted variant, replace the `v4` block with: a frame is dead when the ball is
-clearly off the pitch, or the players are walking and the ball is still or untracked, with dead
-blips shorter than 4 s and live blips shorter than 1 s removed; the possessor is the team of the
-nearest player within 2 m; possession passes only once the other team has been that evidence on
-70% of the last second, dated back to the old team's last evidence frame; a loose or unseen ball
-stays with the last team; after a stoppage, whoever dominates the first second.]
-
-[If `v3` is the submitted variant, replace the `v4` block with: a frame is dead when the Phase 5
-dead score is above a tuned threshold (with the ball tracked) or, without a ball, when the
-players' motion says dead is more likely than not (decision (b)), with stoppages shorter than 2 s
-dropped and live spells shorter than 1 s between stoppages made dead. Who has the ball is a
-running sum of the evidence against the current team: the Phase 5 home score, capped per frame,
-plus a pulse at every touch, found only from a bend in the ball's path with a player within
-1.5 m (20 for a touch confirmed by a same-team next touch within a second or by the same player
-staying within 3 m of the ball for the next 2 s, 30 for any other touch). Evidence for the
-current team drains the sum, never below zero; possession passes once the sum reaches 60, dated
-back to when it last started from zero, so two touches by the other team switch possession on
-their own and one does not. Weak or missing evidence changes nothing, so a loose or unseen ball
-stays with the last team, while during ball gaps the team-shape and pressing clues still count.
-After a stoppage, the sign of the evidence over the first second decides, else the team that had
-it before the stoppage keeps it.]
-
 ## 5. Limitations
 
 - **The missing-ball assumption.** The provided game loses the ball in live play, the external
@@ -302,8 +283,8 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 ```
 
 The output is deterministic: two clean builds give byte-identical files
-(`python tools/check_determinism.py`); the expected SHA-256 of the submitted file is in the README
-[filled in at the code freeze]. The first run parses the tracking (a couple of minutes) and caches
+(`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the README,
+is `bc0a51d1544a72a0b2f187676667e6f3fc5b204ee9fbc81e0d305808e47d6291`. The first run parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.
 `python third_party/mtah2027/validate_submission.py out/espadas.csv` runs the organisers' own
 checks on the file.

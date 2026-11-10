@@ -49,11 +49,17 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 ## Build the submission
 
 ```bash
-python -m espadas.run                   # -> out/espadas.csv (labeler v1), validated, prints its SHA-256
+python -m espadas.run                   # -> out/espadas.csv (labeler v4), validated, prints its SHA-256
 ```
 
-**Expected SHA-256 of the submitted `out/espadas.csv`:** _filled in at the freeze_ (checklist
-11.5). A clean build must print exactly this value.
+**Expected SHA-256 of the submitted `out/espadas.csv`** (labeler `v4`, `X` off; checked
+10 Nov, deterministic):
+
+```
+bc0a51d1544a72a0b2f187676667e6f3fc5b204ee9fbc81e0d305808e47d6291
+```
+
+A clean build must print exactly this value.
 
 The first run parses the tracking (a couple of minutes) and caches arrays in `cache/`. The cache
 never changes the output.

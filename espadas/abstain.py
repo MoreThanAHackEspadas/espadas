@@ -37,10 +37,10 @@ import numpy as np
 # Not shipped anyway: on v4, 89% of those X frames are truly dead (Metrica's ball-less
 # stoppages); on the live ones our guess is right as often as wrong (6% / 6%). The gain is the
 # Metrica "no ball = stoppage" pattern again, which decision (b) (checklist 6.6) refused to rely
-# on because our ball is often missing in live play. Kept in code (spellF1-neutral, tested) so
-# the team can switch it on at selection: set PARAMS[<chosen labeler>] = SETTING here, and the
-# plain `python -m espadas.run` (no flag) applies it. That build is exactly the "X on" variant
-# tools/selection.py scores (both go through resolve()). No flag is needed or wanted.
+# on because our ball is often missing in live play. Off in the submission by the selection rule
+# (docs/decision_rule.md rule 5, 10 Nov). Kept in code (spellF1-neutral, tested): setting
+# PARAMS[<labeler>] = SETTING here makes the plain `python -m espadas.run` (no flag) apply it,
+# exactly the "X on" variant tools/selection.py scored (both go through resolve()).
 SETTING = {"weak": np.inf, "min_gap": 200, "edge": 1}
 PARAMS = {"v1": None, "v2": None, "v3": None, "v4": None}
 
