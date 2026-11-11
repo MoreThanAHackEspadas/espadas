@@ -52,11 +52,12 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 python -m espadas.run                   # -> out/espadas.csv (labeler v4), validated, prints its SHA-256
 ```
 
-**Expected SHA-256 of the submitted `out/espadas.csv`** (labeler `v4`, `X` off; checked
-10 Nov, deterministic):
+**Expected SHA-256 of the submitted `out/espadas.csv`** (labeler `v4`, `X` off, evidence
+models and settings fitted on the five-match pool; adopted 11 Nov by the held-out comparison in
+`docs/idsse_comparison.md`; deterministic):
 
 ```
-bc0a51d1544a72a0b2f187676667e6f3fc5b204ee9fbc81e0d305808e47d6291
+7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb
 ```
 
 A clean build must print exactly this value.
@@ -117,37 +118,38 @@ the ground truth or the provided video. External data lives outside this repo un
 
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
-| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning (Games 1, 3) and held-out comparison (Game 2) |
-| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Branch `refinement` only: matches 12, 13, 15 tuning, 11, 14, 16, 17 held out (`espadas/external/__init__.py`) |
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning pool (Games 1, 3) and held-out selection (Game 2, 10 Nov) |
+| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Tuning pool (matches 12, 13, 15) and held-out comparison (11, 14, 16, 17, 11 Nov); split in `espadas/external/__init__.py` |
 
 Reference labels on external games are derived **by code** from each game's event data
 (`espadas/external/events.py`, rules documented there); on the IDSSE matches from the
-provider's per-frame ball status and possession flags (`espadas/external/idsse.py`). No hand
-labels are used.
+provider's per-frame ball status and possession flags plus a fixed 1 s touch rule
+(`espadas/external/idsse.py`). No hand labels are used. The **tuning pool** (`bench.DEV_TUNING`)
+is Metrica 1, 3 and IDSSE 12, 13, 15: the evidence models and `v4`'s settings are fitted there.
 
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
 python tools/fetch_metrica.py                      # download, pinned to one commit
 python tools/fetch_idsse.py                        # IDSSE, figshare v1, MD5-checked (~2.6 GB)
-python -m espadas.external.bench --labeler v1 v3 v4  # score labelers on the tuning games (1 and 3)
-python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
-python tools/fit_evidence.py                       # refit the Phase 5 evidence models (writes evidence_models.py)
-#   ^ rewrites the tracked espadas/evidence_models.py: never run it between selection and the freeze
-python tools/tune.py --labeler v2                  # re-tune v2's decoding (prints PARAMS)
-python tools/tune.py --labeler v3                  # re-tune v3 (prints PARAMS)
-python tools/tune.py --labeler v4                  # re-tune the 5-state model (prints PARAMS)
-python tools/selection.py --dry-run                # Phase 9: the one-shot held-out comparison; --smoke rehearses on the tuning games
+python tools/scoreboard.py --games 1 3 12 13 15   # labelers x tuning pool x tracker levels
+python -m espadas.external.bench --labeler v4 --games 12  # one game, one tracker level
+python tools/fit_evidence.py                       # refit the evidence models on the pool (writes evidence_models.py)
+#   ^ rewrites the tracked espadas/evidence_models.py: never run it after the freeze
+python tools/tune.py --labeler v4 --workers 6      # re-tune the 5-state model on the pool (prints PARAMS)
+python tools/logo.py --labeler v4 --workers 6      # leave-one-match-out check of fitting + tuning
+python tools/tune_v1.py                            # v1's own tuner (Metrica 1 and 3, not submitted)
+python tools/selection.py --dry-run                # 10 Nov one-shot comparison on Game 2 (spent)
+python tools/idsse_compare.py --dry-run            # 11 Nov one-shot comparison on IDSSE (spent)
 ```
 
-**Game 2 is held out, in code.** The game readers (`metrica_csv`, `metrica_epts`) and
-`bench.available()` refuse the held-out game unless the caller opts in (`heldout=True`), before
-any file is opened. Only a real run of `tools/selection.py` does that by default (once, at
-selection). `bench`, `tune.py`, `tune_v1.py`, `fit_evidence.py` and
-`self_consistency.py` work on Games 1 and 3 and touch Game 2 only with an explicit `--heldout`
-(`--skip-heldout` is still accepted and changes nothing).
+**Held-out games, in code.** Metrica Game 2 and IDSSE 11, 14, 16, 17 are refused by the game
+readers and `bench.available()` unless the caller opts in (`heldout=True`), before any file is
+opened. Only a real run of `tools/selection.py` (Game 2) or `tools/idsse_compare.py` (IDSSE)
+does that, once each; both have been run and refuse a second run. The other tools work on the
+tuning pool and touch a held-out game only with an explicit `--heldout`.
 
-The Metrica games lose the ball almost only during stoppages, while ours also loses it in live
-play. So the bench hides ball bursts in live play (default 25% of live frames; see
+The external games lose the ball almost only during stoppages (the IDSSE ball is never lost),
+while ours also loses it in live play. So the bench hides ball bursts in live play (default 25% of live frames; see
 `espadas/external/degrade.py`). `--hide-ball -1` turns it off.
 
 The Metrica ball is drawn as straight lines between key points (razor-sharp corners at every

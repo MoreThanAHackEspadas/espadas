@@ -4,8 +4,8 @@
 
 Works for any labeler module exposing features(tracking), decode(features, params), PARAMS and
 GRID (v2 onwards; v1 has its own tools/tune_v1.py). Same protocol as tune_v1.py: objective is the
-mean spellF1 over the tuning games (default bench.DEV_TUNING: Metrica 1, 3 and IDSSE 12, 13, 15
-on branch `refinement`; --games to change) *and* over the four tracker levels (degrade.TRACKER_LEVELS:
+mean spellF1 over the tuning games (default bench.DEV_TUNING: Metrica 1, 3 and IDSSE 12, 13, 15;
+--games to change) *and* over the four tracker levels (degrade.TRACKER_LEVELS:
 light, medium, heavy and smooth ball blur plus player position error; checklist 6.6, 6.7: a
 method must work for any plausible tracker, not one level), with the ball hidden on
 degrade.LIVE_MISSING of live frames; the chosen settings are re-scored at 15% / 35% hidden.

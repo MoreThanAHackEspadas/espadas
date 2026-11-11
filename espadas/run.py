@@ -20,7 +20,9 @@ import numpy as np
 from . import abstain, atd, config, labelers, v2, write
 
 # The labeler of the no-flag build, i.e. the submission: v4, chosen on 10 Nov by the
-# pre-registered rule (docs/decision_rule.md, docs/selection.md; checklist 9.3 / 11.1). Changed
+# pre-registered rule (docs/decision_rule.md, docs/selection.md; checklist 9.3 / 11.1); its
+# models and settings re-fitted on the five-match pool and adopted on 11 Nov by the second
+# pre-registered comparison (docs/idsse_comparison_rule.md, docs/idsse_comparison.md). Changed
 # only together with tests/test_run.py::test_default_labeler_is_v4 and the README.
 DEFAULT_LABELER = "v4"
 

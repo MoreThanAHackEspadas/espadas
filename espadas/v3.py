@@ -7,8 +7,8 @@
    `switch_cost` 60) no single touch switches possession on its own: two touches by the other
    team do, or one plus enough team evidence; the CUSUM does the confirming.
 
-Tracking only, no Smart Tagging. Settings tuned by tools/tune.py --labeler v3 on Metrica 1 and 3
-only; never on our match.
+Tracking only, no Smart Tagging. Settings tuned by tools/tune.py --labeler v3 on external games
+only (since 11 Nov the five-match pool, bench.DEV_TUNING); never on our match.
 """
 
 import numpy as np

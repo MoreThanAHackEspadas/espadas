@@ -3,7 +3,7 @@
     python tools/fit_evidence.py              # fits, prints a report, writes espadas/evidence_models.py
 
 Training rows: every graded frame of the tuning games (default bench.DEV_TUNING: Metrica 1, 3
-and IDSSE 12, 13, 15 on branch `refinement`; --games to change), once per tracker level (light,
+and IDSSE 12, 13, 15; --games to change), once per tracker level (light,
 medium, heavy, smooth; degrade.TRACKER_LEVELS: ball blur plus player position error), with the
 ball hidden on degrade.LIVE_MISSING of live frames (the same degraded views the labelers are
 tuned on).

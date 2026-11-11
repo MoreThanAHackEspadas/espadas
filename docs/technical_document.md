@@ -21,18 +21,18 @@ measurements of its tracking did inform some design choices; section 3 says whic
    strongest single clue) and which team is moving up the pitch.
 3. **Touches.** Moments a player plays the ball, found in two ways: a bend in the ball's path
    with a player within reach, and a change of who has the ball at their feet (the nearest player
-   within reach for a run of frames), which needs no bend. A touch followed by a same-team touch
-   within a second is "confirmed" (control). Confirmation by a hold (the same player staying
-   with the ball) exists in the code but is switched off in `v4`'s tuned settings; `v3` uses it,
-   and finds touches from bends only.
+   within reach for a run of frames), which needs no bend. A touch is "confirmed" (control) when
+   the same team touches the ball next within a few seconds (4 s in `v4`'s tuned settings), or
+   when the same player stays within 1 m of the ball for the next half second.
 4. **Sequence model.** The scores and touches of a whole half are decoded at once (below).
 5. **Output.** The organisers' pre-kick-off window is forced to `D`, ungraded frames are `X`, the
    file is validated with the organisers' own checks and its SHA-256 is printed.
 
 **Why this, rather than something else.** We have no labels on the provided game and may not
-make any, the tuning data is two external matches from a different, much cleaner tracker, and
-the file must be reproducible. That ruled out a large learned model: with two games it would
-memorise the tuning tracker rather than learn possession. Instead each stage is small and
+make any, the tuning data is a handful of external matches from other trackers (five matches in
+the final tuning pool, section 3), and the file must be reproducible. That ruled out a large
+learned model: with so few games it would memorise the tuning trackers rather than learn
+possession. Instead each stage is small and
 checkable on its own (a clue is right or wrong on an external game), the parts of the official
 definition that are structural (a loose ball keeps its team, possession changes only through a
 loose ball, a restart is taken in control) are built into the model rather than learned, and
@@ -45,11 +45,20 @@ provided tracking already gives positions, the detector would have to be trained
 data only, and the time was better spent on transfer between trackers, which turned out to be
 the real problem (sections 3 and 5).
 
-**The submitted variant is `v4`**, chosen on 10 Nov by a rule written and pushed before the one
-held-out comparison (`docs/decision_rule.md`): `v4` was the pre-registered choice and another
-candidate could replace it only by beating it on Game 2 by at least 0.04 spellF1, consistently
-across tracker levels. On Game 2 (mean over the four tracker levels, 25% live ball hidden) `v4`
-scored 0.533, `v3` 0.532 and `v1` 0.470, so `v4` stands (`docs/selection.md`).
+**The submitted variant is `v4`**, chosen in two pre-registered steps, each decided by a rule
+written and pushed before its one held-out comparison:
+1. *10 Nov, which labeller* (`docs/decision_rule.md`, `docs/selection.md`). `v4` was the
+   pre-registered choice, to be replaced only by a candidate beating it on held-out Metrica Game 2
+   by at least 0.04 spellF1, consistently across tracker levels. Game 2 (mean over the four
+   tracker levels, 25% live ball hidden): `v4` 0.533, `v3` 0.532, `v1` 0.470, so `v4` stood.
+2. *11 Nov, re-fitted on more data* (`docs/idsse_comparison_rule.md`, `docs/idsse_comparison.md`).
+   The same `v4`, with its evidence models re-fitted and its settings re-tuned on a five-match pool
+   that adds three DFL/Sportec matches to Metrica's (section 3), against the 10 Nov file, on four
+   held-out DFL/Sportec matches, adopt only if at least 0.04 better, ahead on 3 of 4 matches and
+   3 of 4 tracker levels, and not behind at 15% / 35% hidden. Result: 0.554 against 0.435
+   (+0.119), ahead on all four matches (+0.097 to +0.132) and all four levels, +0.123 / +0.116
+   at 15% / 35%; adopted. A leave-one-match-out estimate made before the run had predicted about
+   +0.10.
 
 ### Sequence model (`v4`, Phase 7)
 
@@ -57,10 +66,10 @@ Each half is decoded as one sequence by a 5-state hidden Markov model: home in c
 loose (ball loose, home had it last), away in control, away loose, dead. A loose ball keeps the
 label of the last team in control, as the official rules say, so a deflection or block is not a
 change of possession. Per-frame evidence is the Phase 5 dead and home log-odds plus the Phase 6
-touches: a confirmed touch (a same-team next touch within a second) favours that team in
-control; a lone touch counts against the other team being in control and gives the toucher's
-team a large credit, tuned larger than a confirmed touch's, so one clear touch can switch
-possession (section 4). When the ball is not tracked, no ball-based evidence is used at all (no
+touches: a confirmed touch (section 1) favours that team in control; a lone touch counts against
+the other team being in control and gives the toucher's team a large credit, tuned larger than
+a confirmed touch's, so one clear touch can switch possession (section 4). When the ball is not
+tracked, no ball-based evidence is used at all (no
 information), and on those frames the dead score keeps a fixed, untuned threshold (decision
 (b), section 3). Switching between states has a cost per kind of change
 (control to loose and back, turnover via a loose ball, stoppage, restart); a direct change from
@@ -98,7 +107,7 @@ weights and costs are tuned on the external tuning games only.
 
 ## 3. Training and tuning data
 
-One external dataset, and nothing from the provided game.
+Two external datasets, and nothing from the provided game.
 
 **Metrica Sports sample data, Games 1–3.** Source `github.com/metrica-sports/sample-data`,
 pinned to commit `e706dd5`, downloaded by `tools/fetch_metrica.py` (size-checked, kept outside
@@ -119,6 +128,20 @@ here and in the repository README. We do not redistribute the data: it is downlo
 Metrica's own repository (`metrica-sports/sample-data`) at a pinned commit and kept outside ours,
 and it is used only to fit and tune our settings (Games 1 and 3) and to compare the final
 candidates (Game 2).
+
+**DFL / Sportec "IDSSE" open dataset, 7 matches.** Bassek, M., Rein, R., Weber, H. & Memmert, D.,
+"An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12,
+195 (2025); figshare DOI 10.6084/m9.figshare.28196177, version 1, downloaded by
+`tools/fetch_idsse.py` (MD5-checked against figshare, kept outside the repository). Two
+Bundesliga and five 2. Bundesliga matches of 2022/23 (137,000–147,000 frames each), tracked by the
+league's optical system (TRACAB Gen5, 25 Hz), with two per-frame flags from the provider: ball
+status ("inactive when the match is interrupted by the referee"; it matches DFL's published net
+playing time exactly) and ball possession ("defined by the player in control of the ball").
+**Rights:** released under **CC BY 4.0** with the DFL's authorisation; we credit the authors and
+DFL / Sportec Solutions here and in the README, we changed the data (converted the positions,
+derived labels, section 4), and we do not redistribute it. We use only the match information and
+the positions files; the reference labels are derived from the two flags by code (section 4),
+so again no label of ours exists anywhere.
 
 **Nothing fitted or tuned on the provided game.** No setting is fitted or tuned on the provided
 game: not on the public five minutes, the private ground truth or the video (organisers'
@@ -149,23 +172,33 @@ inform design choices, and we list them:
   of the ball's carrier, which need no bend (1,200–1,360 per 90 minutes on the bench, 1,295 on
   the provided game).
 
-**Split.** Games 1 and 3 are the tuning games; Game 2 is held out: nothing was fitted or tuned on
-it. It has been scored before, though. During development, on the earlier bench, the baseline
-`v0` and the labellers `v1`, `v2` and `v3` were scored on Game 2 (`v2` more than once, while it
-was being built), and one comparison there kept `v1` as the submission over `v2`; those scores
-are recorded in the code comments and the team checklist. The Phase 5 evidence models (fitted on
-Games 1 and 3 only) also had their per-frame accuracy reported on Game 2 during development: team
-0.89 (0.73 with the ball missing), dead 0.84. The bench then changed (ball blur on
-4 Nov, player position error and the smoothed level on 5 Nov). On the current bench Game 2 was
-scored exactly once, on 10 Nov, by the selection comparison (`tools/selection.py`, results in
-`docs/selection.md`), after the decision rule was pushed; nothing was changed after it.
-Everything with a number in it was fitted or tuned on Games 1 and 3 only: the two per-frame
-logistic models (dead-ball and team log-odds, `tools/fit_evidence.py`, written to `evidence_models.py` as constants), every labeller's settings
-(`tools/tune_v1.py`, `tools/tune.py`) and the abstention policy (`tools/tune_abstain.py`).
-Building the submission therefore needs no external data at all.
+**Split.** Fixed before any score was taken on the games concerned.
+- *Tuning pool (everything with a number in it is fitted or tuned here):* Metrica Games 1 and 3
+  and IDSSE matches 12, 13 and 15 (Bochum v Leverkusen, Düsseldorf v Regensburg, Düsseldorf v
+  Nürnberg). The two per-frame logistic models (`tools/fit_evidence.py`, written to
+  `evidence_models.py` as constants) and `v4`'s settings (`tools/tune.py`) were fitted on this
+  pool on 11 Nov. Building the submission therefore needs no external data at all.
+- *Held out:* Metrica Game 2, scored on the current bench exactly once, by the 10 Nov selection
+  (`tools/selection.py`); and IDSSE matches 11, 14, 16 and 17, scored exactly once, by the 11 Nov
+  comparison (`tools/idsse_compare.py`), each time after its decision rule was pushed and with
+  nothing changed after it. The code refuses to load a held-out game without an explicit opt-in.
+  Game 2's history before the current bench: during development on the earlier bench the
+  baseline `v0` and the labellers `v1`, `v2` and `v3` were scored on it (`v2` more than once),
+  one comparison there kept `v1` over `v2`, and the first evidence models had their per-frame
+  accuracy reported on it (team 0.89, 0.73 with the ball missing; dead 0.84); those scores are in
+  the code comments and the team checklist.
+- *How the pool was checked:* leave-one-match-out over the pool (`tools/logo.py`: fit and tune on
+  all but one match, score the one left out). With only the two Metrica games, settings tuned on
+  one scored worse on the other than the settings tuned on both, in every case; with four
+  training matches, re-tuning helped the match left out on average (`v4` 0.545 against 0.524).
+  Re-fitting the evidence models on varied data was the largest single gain (+0.07 on every
+  DFL/Sportec match left out).
+- `v3` was re-tuned on the same pool (not submitted); `v1` and `v2` keep their earlier,
+  Metrica-only tuning.
 
-**Making the external games look like our tracking.** Metrica's tracking is far cleaner than the
-automatic tracking of the provided game, so the bench degrades it before any score is taken
+**Making the external games look like our tracking.** Both external trackers are far cleaner than
+the automatic tracking of the provided game (the DFL/Sportec ball is tracked on every frame), so
+the bench degrades every external match the same way before any score is taken
 (`espadas/external/degrade.py`): (1) the ball is hidden in bursts during **live play** until 25%
 of live frames have no ball (Metrica loses the ball almost only at stoppages, the provided game
 also in live play; 25% is an assumption, so every result is also checked at 15% and 35%); (2) the
@@ -183,7 +216,7 @@ exactly one team is in possession; a loose or contested ball stays with the last
 possession; possession changes only when the other team gains controlled possession; every
 restart has a clear possessor; a dead ball is `D` and never a possession.
 
-**Reference labels on the external games** (`espadas/external/events.py`; fixed definitions,
+**Reference labels on the Metrica games** (`espadas/external/events.py`; fixed definitions,
 not tuned), mapped onto Metrica's event types:
 - *Control events:* set piece, pass, carry, shot and ball-lost, unless the subtype says header or
   clearance (a single touch). A ball-lost implies the team had the ball first.
@@ -192,9 +225,20 @@ not tuned), mapped onto Metrica's event types:
   other team does anything in play, the change is dated back to the first of those touches (when
   the ball was won).
 - *Dead ball* starts when the ball leaves the pitch, at a shot that goes out or in, at the whistle
-  for a foul, or at an offside or handball call, and ends at the next control event (the restart).
+  for a foul, at an offside or handball call, or when the referee otherwise halts play (Metrica's
+  `BALL LOST` tagged `FORCED`, `VOLUNTARY` or `END HALF`, and an offside flagged on a pass;
+  added 11 Nov, `docs/events_rules_review.md`), and ends at the next control event (the restart).
 - Each half is graded from its kick-off to its last event; everything else is `X`, as in the
   provided game.
+
+**Reference labels on the DFL/Sportec matches** (`espadas/external/idsse.py`; fixed before any
+of them was scored, not tuned): ball status inactive is `D`; otherwise the provider's possession
+flag gives `H` or `A`. That flag also moves on brief touches (a third of its possessions last
+under 2 s), so one rule brings it to the official definition: a possession shorter than 1 s that
+interrupts the other team's live possession and does not hold (the ball goes straight back, or
+dead) is a touch, not a change, and stays with the team that had the ball. A one-touch pass to a
+team-mate and a restart are kept. This turns 389–477 possessions per 90 minutes into 318–379
+(Metrica: 268 and 377) and changes 0.4–0.7% of frames, never a `D`.
 
 **In the labeller (`v4`):**
 - *Loose balls.* One "loose" state per team, beside its "in control" state. A loose ball keeps
@@ -205,18 +249,19 @@ not tuned), mapped onto Metrica's event types:
   then can the other team win it, at a tuned turnover cost.
 - *Challenges and single touches.* A touch is detected from the ball's path (a bend with a player
   within reach) or from a change of the ball's carrier (a different player with the ball at their
-  feet). A touch confirmed by a same-team next touch within a second (pass chain) counts as
-  control; confirmation by holding the ball is switched off in the tuned settings. A lone touch
-  by the other team mostly counts as a change too: tuning chose weights that let one clear touch
-  switch possession, because on the external games a lone detected touch is usually a real
-  interception whose next touch was not seen. Forbidding that costs 0.007 spellF1 on the bench.
-  It is the one place where we lean away from the letter of "a touch without control is not a
-  change".
+  feet). A touch confirmed by a same-team next touch within 4 s (pass chain) or by the toucher
+  staying within 1 m of the ball for half a second counts as control. A lone touch by the other
+  team mostly counts as a change too: tuning chose weights that let one clear touch switch
+  possession, because on the external games a lone detected touch is usually a real interception
+  whose next touch was not seen (forbidding that cost 0.007 spellF1 on the earlier, Metrica-only
+  bench). It is the one place where we lean away from the letter of "a touch without control is
+  not a change".
 - *Restarts.* A dead ball can only be followed by a team in control, never by a loose ball, and a
   half never starts loose. Which team restarts is decided by the evidence after the whistle
   (nearest players, team shape, the first touches).
 - *Dead balls.* A stoppage state with its own entry and exit costs; decoded stoppages shorter than
-  3 s are given to the team around them. Where the ball is not tracked only the players' motion
+  2 s are given to the team around them, and live spells shorter than 1 s between two stoppages
+  become dead. Where the ball is not tracked only the players' motion
   can say "dead", with a fixed, untuned threshold (decision (b), section 3).
 - *Match-level rules.* The organisers' second-half pre-kick-off window (frames 110,808–113,741)
   is always `D`; frames outside the two halves are `X`.
@@ -231,31 +276,32 @@ not tuned), mapped onto Metrica's event types:
   and on ball-less frames only the players' motion can call a stoppage, with a threshold set by
   reasoning rather than tuning. Long live stretches without a ball are where the labels are least
   reliable, and a long stoppage where players keep moving can be called live.
-- **Tracker transfer.** Settings are tuned on Metrica tracking degraded to look like an automatic
-  tracker, and the generic levels do not reproduce ours exactly. Our ball bends even less than at
-  any bench level, so touches found from the ball's path are rare on the provided game and most
-  touches come from changes of the ball's carrier, whose team is right only about 70% of the time
-  at the cleaner bench levels and about 50% at the harsher ones. `v4` scores 0.50–0.59 spellF1
-  across the levels, the realistic ones at the low end.
-- **Possession count.** On the provided game `v4` gives about 246 possessions per 90 minutes
-  (diagnostic only; the practice games have 254–377), so some short possessions are probably
-  merged into their neighbours. `v1` gives 301 but collapses on the realistic tracker levels
-  (0.43–0.45 spellF1). `v1`'s settings date from 3 Nov: they were tuned on the earlier bench,
-  before the ball blur and player error, and were not re-tuned on the final one, while `v3` and
-  `v4` were. So these numbers compare the candidates as they stand, not what each method could
-  reach with equal tuning.
-- **Little tuning data.** Two tuning games and one held-out game. `v3`'s held-out gain was a
-  seventh of its tuning gain, so some settings are overfitted. Who has the ball is the bottleneck,
+- **Tracker transfer.** Settings are tuned on two other trackers (Metrica's and the DFL's TRACAB)
+  degraded to look like an automatic tracker, and the generic levels do not reproduce ours
+  exactly; our match is a third tracker and a third league, so its real score is unknown. Our ball
+  bends even less than at any bench level, so touches found from the ball's path are rare on the
+  provided game and most touches come from changes of the ball's carrier, whose team is right only
+  about 70% of the time at the cleaner bench levels and about 50% at the harsher ones. On the four
+  held-out DFL/Sportec matches `v4` scores 0.539–0.570 spellF1 by tracker level (0.520–0.550 with
+  35% of the live ball hidden), the realistic levels at the low end.
+- **Possession count.** On the provided game `v4` gives about 264 possessions per 90 minutes
+  (diagnostic only; the reference on the practice games has 269–382), so some short possessions
+  are probably merged into their neighbours; on the held-out DFL/Sportec matches it predicts
+  71–82% of the reference count. `v1` and `v3` were compared on 10 Nov with their own, older
+  tuning, not re-tuned on the final pool, so that comparison is of the candidates as they stood.
+- **Little tuning data.** Five tuning matches and five held-out ones, from two providers. Tuned
+  scores still overstate held-out ones (leave-one-match-out: about 0.02 for `v4`), and with only
+  two Metrica games re-tuning did not carry over at all. Who has the ball is the bottleneck,
   not stoppages: on the practice games perfect team calls would lift spellF1 to about 0.86,
   perfect stoppage calls only to about 0.65.
-- **Reference labels.** The H/A/D reference on the external games comes from the provider's
-  events through fixed rules. A review of those rules (`docs/events_rules_review.md`) found two
-  things we chose to document rather than change before selection: referee stoppages that
-  Metrica tags `BALL LOST-FORCED` stay labelled live until the free kick (5–9 per game, about
-  1.5–2% of frames, so the labelers were tuned to call some such stoppages live), and the two
-  tuning games are annotated with different conventions (Game 3's carry events make every
-  recovery an immediate change of possession: 377 against 268 possessions per 90 minutes), so
-  the tuning averages over two readings of "controlled possession".
+- **Reference labels.** The H/A/D reference on the external games comes from the providers' data
+  through fixed rules, so it is only as close to the official definition as those rules. A review
+  (`docs/events_rules_review.md`) found referee stoppages that Metrica tags `BALL LOST-FORCED`
+  labelled live (1.7–2.6% of frames), fixed on 11 Nov before the final tuning; and the two
+  Metrica games are annotated with different conventions (Game 3's carry events make every
+  recovery an immediate change: 377 against 268 possessions per 90 minutes), which we left as it
+  is. On the DFL/Sportec matches the 1 s touch rule (section 4) is a judgement about what counts
+  as control, fixed before scoring.
 - **Abstention is off.** Abstaining on long ball-less gaps inside a spell raised macroF1 by 0.028
   on the bench, but 89% of those frames were Metrica's ball-less stoppages, the pattern we decided
   not to rely on, so the gain may not transfer. spellF1 is unaffected either way.
@@ -264,9 +310,9 @@ not tuned), mapped onto Metrica's event types:
 - **Not used:** the video (no detector of our own), Smart Tagging and the tracked-object count
   (section 2).
 - **With more time:** an own ball detector on the tactical video, trained on external data, to
-  shrink the missing-ball problem at its source; more external games from an optical tracker
-  (for instance the DFL/Sportec open dataset, CC BY 4.0) to tune on tracking closer to ours and to
-  cut overfitting; a better team attribution for carrier touches.
+  shrink the missing-ball problem at its source; tuning on all ten external matches and on more
+  open datasets (more varied data was the largest gain we found); a better team attribution for
+  carrier touches.
 
 ## 6. How to reproduce
 
@@ -283,18 +329,19 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 ```
 
 The output is deterministic: two clean builds give byte-identical files
-(`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the README,
-is `bc0a51d1544a72a0b2f187676667e6f3fc5b204ee9fbc81e0d305808e47d6291`. The first run parses the tracking (a couple of minutes) and caches
+(`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the
+README, is `7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb`. The first run
+parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.
 `python third_party/mtah2027/validate_submission.py out/espadas.csv` runs the organisers' own
 checks on the file.
 
-Re-running the tuning is not needed to build the file. `python tools/fetch_metrica.py` downloads
-the external games outside the repository, `python -m espadas.external.bench --labeler v1 v3 v4
---games 1 3` scores them, and `tools/fit_evidence.py`, `tools/tune.py` and
-`tools/tune_abstain.py` regenerate the evidence models, the `v3` and `v4` settings and the
-abstention setting, all fitted on the final bench. `v1` is the exception: its settings date from
-3 Nov and were tuned with `tools/tune_v1.py` on the earlier bench, before the ball blur and
-player error; it was not re-tuned on the final bench, so re-running `tools/tune_v1.py` now need
-not give the shipped values. (`v2`, not a candidate, was last tuned on the 4 Nov bench.) See the
-README's "External data" section.
+Re-running the tuning is not needed to build the file. `python tools/fetch_metrica.py` and
+`python tools/fetch_idsse.py` download the external games outside the repository,
+`python tools/scoreboard.py --games 1 3 12 13 15` scores the labellers on the tuning pool, and
+`python tools/fit_evidence.py` then `python tools/tune.py --labeler v4 --workers 6` regenerate
+the evidence models and `v4`'s settings on that pool (`tools/logo.py` runs the
+leave-one-match-out check). `v1` and `v2` keep their earlier, Metrica-only settings, and `v3`
+(re-tuned on the pool) is not submitted (see the code comments), so re-tuning them now need not give
+the shipped values. The two held-out comparisons are one-shot by design (`tools/selection.py`,
+`tools/idsse_compare.py`) and refuse a second run. See the README's "External data" section.
