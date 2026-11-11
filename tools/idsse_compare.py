@@ -79,8 +79,18 @@ def dirty():
     return [l for l in git("status", "--porcelain", "--untracked-files=no").splitlines() if l]
 
 
+def has_commit(commit):
+    """False in a clone without that commit (e.g. CI's shallow checkout)."""
+    return subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"], cwd=ROOT,
+                          capture_output=True).returncode == 0
+
+
 def frozen_ok():
-    """[] if the reference / degradation code is as pre-registered, else the changed files."""
+    """[] if the reference / degradation code is as pre-registered, else the changed files.
+    Raises RuntimeError if REFERENCE_COMMIT is not in this clone (cannot check: not "changed")."""
+    if not has_commit(REFERENCE_COMMIT):
+        raise RuntimeError("commit {} is not in this clone (shallow?): run `git fetch "
+                           "--unshallow` first".format(REFERENCE_COMMIT))
     return [f for f in FROZEN_FILES
             if subprocess.run(["git", "diff", "--quiet", REFERENCE_COMMIT, "--", f],
                               cwd=ROOT).returncode != 0]
@@ -214,6 +224,12 @@ def main(argv=None):
         if dirty():
             print("refused: uncommitted changes to tracked files:\n  " + "\n  ".join(dirty()))
             return 2
+    missing = [c for c in (REFERENCE_COMMIT, BASELINE[0]) + ((challenger[0],) if challenger
+                                                             else ()) if not has_commit(c)]
+    if missing:
+        print("refused: commit(s) {} not in this clone; run `git fetch --unshallow`".format(
+            " ".join(missing)))
+        return 2
     changed = frozen_ok()
     if changed:
         print("refused: reference / degradation code differs from {}: {}".format(

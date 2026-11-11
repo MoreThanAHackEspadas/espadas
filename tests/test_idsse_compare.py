@@ -74,8 +74,16 @@ def test_real_run_refuses_a_second_time(tmp_path, monkeypatch):
     assert c.main([]) == 2
 
 
+@pytest.mark.skipif(not c.has_commit(c.REFERENCE_COMMIT),
+                    reason="shallow clone (CI): the pre-registered commit is not available")
 def test_frozen_reference_check_passes_on_this_checkout():
     assert c.frozen_ok() == []
+
+
+def test_missing_reference_commit_is_an_error_not_a_change(monkeypatch):
+    monkeypatch.setattr(c, "has_commit", lambda commit: False)
+    with pytest.raises(RuntimeError):
+        c.frozen_ok()
 
 
 def test_challenger_flag_only_for_smoke():
