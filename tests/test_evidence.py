@@ -109,3 +109,30 @@ def test_ball_less_frames_use_fixed_threshold_not_the_tuned_one():
     p = {"dead_smooth": 0, "dead_threshold": -2.0, "min_dead": 25, "min_alive": 0}
     assert set(v2.decode(f, p)[100:300]) == {"H"}    # -1 < 0: motion says live, so live
     assert set(v2.decode(f, dict(p, unseen_threshold=None))[100:300]) == {"D"}
+
+
+def test_boosted_export_matches_sklearn_and_is_symmetric():
+    pytest.importorskip("sklearn")
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+    import fit_evidence
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(6000, 4))
+    y = (x[:, 0] * x[:, 1] + 0.5 * x[:, 2] + rng.normal(scale=0.3, size=6000)) > 0
+    params = dict(fit_evidence.BOOST, max_iter=20, min_samples_leaf=20)
+    model = HistGradientBoostingClassifier(**params).fit(x, y)
+    bias, trees = fit_evidence.export_trees(model)
+    exported = {"names": list("abcd"), "bias": bias, "symmetric": False, "trees": trees}
+    q = rng.normal(size=(500, 4))
+    assert np.allclose(evidence.apply_model(q, exported), model.decision_function(q), atol=1e-6)
+
+    old_step, fit_evidence.BOOST_STEP = fit_evidence.BOOST_STEP, 1
+    try:
+        team = fit_evidence.fit_boosted(list("abcd"), x, y, symmetric=True)
+    finally:
+        fit_evidence.BOOST_STEP = old_step
+    assert team["symmetric"] and len(team["trees"]) == fit_evidence.BOOST["max_iter"]
+    assert np.array_equal(evidence.apply_model(q, team), -evidence.apply_model(-q, team))

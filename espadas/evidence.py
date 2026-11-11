@@ -294,6 +294,59 @@ def apply_logistic(x, bias, weights):
     return bias + np.asarray(x, dtype=float) @ np.asarray(weights, dtype=float)
 
 
+def _tree_arrays(model):
+    """The exported trees as padded arrays (feature, threshold, left, right, value), cached."""
+    key = id(model["trees"])
+    if key not in _TREE_CACHE:
+        trees = model["trees"]
+        width = max(len(t["value"]) for t in trees)
+
+        def pad(field, dtype):
+            out = np.zeros((len(trees), width), dtype=dtype)
+            for i, t in enumerate(trees):
+                out[i, :len(t[field])] = t[field]
+            return out
+        _TREE_CACHE[key] = (model["trees"], pad("feature", np.intp), pad("threshold", float),
+                            pad("left", np.intp), pad("right", np.intp), pad("value", float),
+                            max(t["depth"] for t in trees))
+    return _TREE_CACHE[key][1:]
+
+
+_TREE_CACHE = {}
+
+
+def _sum_trees(x, model):
+    feature, threshold, left, right, value, depth = _tree_arrays(model)
+    rows = np.arange(len(x))
+    total = np.full(len(x), float(model["bias"]))
+    for t in range(len(feature)):
+        node = np.zeros(len(x), dtype=np.intp)
+        for _ in range(depth):          # a leaf has left = right = itself, so it stays put
+            go_left = x[rows, feature[t][node]] <= threshold[t][node]
+            node = np.where(go_left, left[t][node], right[t][node])
+        total += value[t][node]
+    return total
+
+
+def apply_trees(x, model):
+    """Log-odds from a boosted-tree model exported by tools/fit_evidence.py --model boosted:
+    bias plus one leaf value per tree (a row goes left when its clue <= the node's threshold).
+    Plain NumPy, so the build needs no scikit-learn. A "symmetric" model (the team model, whose
+    clues are all home-minus-away) is evaluated as (f(x) - f(-x)) / 2: swapping the teams flips
+    the sign exactly."""
+    x = np.ascontiguousarray(x, dtype=float)
+    if model.get("symmetric"):
+        return 0.5 * (_sum_trees(x, model) - _sum_trees(-x, model))
+    return _sum_trees(x, model)
+
+
+def apply_model(x, model):
+    """Log-odds per row from a fitted model dict: boosted trees if it has them, else logistic."""
+    if "trees" in model:
+        return apply_trees(x, model)
+    return apply_logistic(x, model["bias"], model["weights"])
+
+
 def _fitted():
     """Models written by tools/fit_evidence.py (fitted on the external tuning games only)."""
     try:
@@ -312,14 +365,14 @@ def log_odds(c, dead_model=None, team_model=None):
         raise RuntimeError("evidence models not fitted: run tools/fit_evidence.py")
     names, x = motion_design(c)
     _check(names, dead_model["motion"])
-    dead = apply_logistic(x, dead_model["motion"]["bias"], dead_model["motion"]["weights"])
+    dead = apply_model(x, dead_model["motion"])
     names, x = ball_design(c)
     _check(names, dead_model["ball"])
     seen = c["present"]
-    dead[seen] = apply_logistic(x[seen], dead_model["ball"]["bias"], dead_model["ball"]["weights"])
+    dead[seen] = apply_model(x[seen], dead_model["ball"])
     names, x = team_design(c)
     _check(names, team_model)
-    team = apply_logistic(x, team_model["bias"], team_model["weights"])
+    team = apply_model(x, team_model)
     return dead, team
 
 

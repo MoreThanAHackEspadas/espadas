@@ -71,11 +71,14 @@ def views(game, levels, hide=HIDE_BALL):
     return out
 
 
+EVIDENCE = "logistic"          # --evidence: the kind of evidence model fitted in every fold
+
+
 def fit_on(train):
     """Evidence models fitted on [(name, views)] training games."""
     rows = [(name + "/" + level, gt, evidence.clues(tracking), graded)
             for name, game_views in train for level, gt, _, tracking, graded in game_views]
-    dead_model, team_model, _ = fit_evidence.fit_models(rows)
+    dead_model, team_model, _ = fit_evidence.fit_models(rows, EVIDENCE)
     return dead_model, team_model
 
 
@@ -131,12 +134,24 @@ def main(argv=None):
                         help="only these folds (games left out); default every game")
     parser.add_argument("--workers", type=int, default=1,
                         help="processes scoring the training views in parallel (same result)")
+    parser.add_argument("--pool", choices=sorted(bench.POOLS), default=None,
+                        help="named pool instead of --games: dev (the default games) or full "
+                             "(all ten external matches, incl. the spent held-out ones; "
+                             "docs/refinement2_rule.md)")
+    parser.add_argument("--evidence", choices=fit_evidence.KINDS, default="logistic",
+                        help="evidence models fitted in every fold: logistic (the shipped kind) "
+                             "or boosted trees")
     parser.add_argument("--verbose", action="store_true", help="print the descent")
     args = parser.parse_args(argv)
+    global EVIDENCE
+    EVIDENCE = args.evidence
+    spent = False
+    if args.pool:
+        args.games, spent = bench.pool(args.pool)
     config.seed_everything()
     log = print if args.verbose else (lambda *a, **k: None)
 
-    games = {n: game for n, game in bench.available(args.games)}
+    games = {n: game for n, game in bench.available(args.games, heldout=spent)}
     if len(games) < 2:
         print("need at least two tuning games downloaded (tools/fetch_metrica.py, fetch_idsse.py)")
         return 1
@@ -145,8 +160,8 @@ def main(argv=None):
     folds = [([loaded[a] for a in sorted(loaded) if a != b], loaded[b], games[b])
              for b in left_out]
 
-    print("leave-one-game-out, levels {}, ball hidden on {:.0%} of live frames".format(
-        " ".join(args.levels), HIDE_BALL))
+    print("leave-one-game-out, levels {}, ball hidden on {:.0%} of live frames, {} evidence"
+          .format(" ".join(args.levels), HIDE_BALL, EVIDENCE))
     for name in args.labeler:
         module = importlib.import_module("espadas." + name)
         results = []
