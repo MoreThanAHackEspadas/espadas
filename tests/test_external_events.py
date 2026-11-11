@@ -65,3 +65,27 @@ def test_offside_is_dead_until_free_kick():
               e(2, H, "BALL LOST", 3, 5, "OFFSIDE"),
               e(3, A, "SET PIECE", 9, sub="FREE KICK-INDIRECT"), e(4, A, "PASS", 9, 11)]
     assert run(events, 12) == "HHHHH" + "DDDD" + "AAA"
+
+
+def test_referee_stoppages_are_dead_until_the_restart():
+    # BALL LOST-FORCED (play halted by the referee), as substring (HEAD-FORCED): dead from its
+    # end frame until the free kick, not left live with the losing team (review issue 1).
+    for sub in ("FORCED", "HEAD-FORCED", "VOLUNTARY", "END HALF"):
+        events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 3),
+                  e(2, H, "BALL LOST", 5, 6, sub), e(3, A, "SET PIECE", 10, sub="FREE KICK"),
+                  e(4, A, "PASS", 10, 13)]
+        assert run(events, 14) == "H" * 6 + "D" * 4 + "A" * 4, sub
+
+
+def test_offside_on_a_pass_is_dead_until_the_free_kick():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 3),
+              e(2, H, "PASS", 4, 6, "DEEP BALL-OFFSIDE"), e(3, A, "SET PIECE", 10, sub="FREE KICK"),
+              e(4, A, "PASS", 10, 13)]
+    assert run(events, 14) == "H" * 6 + "D" * 4 + "A" * 4
+
+
+def test_other_ball_lost_is_still_a_change_not_a_stoppage():
+    events = [e(0, H, "SET PIECE", 0, sub="KICK OFF"), e(1, H, "PASS", 0, 3),
+              e(2, H, "BALL LOST", 5, 6, "INTERCEPTION"), e(3, A, "RECOVERY", 7, 7),
+              e(4, A, "PASS", 8, 11)]
+    assert run(events, 12) == "H" * 7 + "A" * 5

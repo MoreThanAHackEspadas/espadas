@@ -48,6 +48,27 @@ def objective(module, games, params):
     return float(np.mean(scores)), scores
 
 
+def descend(module, games, start, log=print):
+    """(best mean spellF1, params): coordinate descent over module.GRID from `start` on `games`
+    (prepare() rows). Shared with tools/logo.py."""
+    params = dict(start)
+    best, _ = objective(module, games, params)
+    log("start   {:.4f}  {}".format(best, params))
+    for sweep in range(1, MAX_SWEEPS + 1):
+        improved = False
+        for name, values in module.GRID.items():
+            for value in values:
+                trial = dict(params, **{name: value})
+                score, _ = objective(module, games, trial)
+                if score > best + 1e-9:
+                    best, params, improved = score, trial, True
+            log("sweep {} {:<15} -> {:<6} mean spellF1 {:.4f}".format(
+                sweep, name, params[name], best))
+        if not improved:
+            break
+    return best, params
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--labeler", required=True, help="module in espadas/, e.g. v2")
@@ -62,21 +83,7 @@ def main(argv=None):
     config.seed_everything()
 
     tuning = [g for blur in OBJECTIVE_BLURS for g in prepare(module, bench.TUNING, blur=blur)]
-    params = dict(module.PARAMS)
-    best, _ = objective(module, tuning, params)
-    print("start   {:.4f}  {}".format(best, params))
-    for sweep in range(1, MAX_SWEEPS + 1):
-        improved = False
-        for name, values in module.GRID.items():
-            for value in values:
-                trial = dict(params, **{name: value})
-                score, _ = objective(module, tuning, trial)
-                if score > best + 1e-9:
-                    best, params, improved = score, trial, True
-            print("sweep {} {:<15} -> {:<6} mean spellF1 {:.4f}".format(
-                sweep, name, params[name], best))
-        if not improved:
-            break
+    best, params = descend(module, tuning, module.PARAMS)
 
     _, per_game = objective(module, tuning, params)
     print("\nPARAMS = {}".format(params))

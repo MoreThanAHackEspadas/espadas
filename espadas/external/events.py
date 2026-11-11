@@ -22,8 +22,11 @@ How that maps onto Metrica events (definitions: documentation/events-definitions
   change nor interrupt one.
 - **Dead ball** starts at: BALL OUT (its end frame: when the ball left the pitch), a SHOT whose
   subtype ends in OUT or GOAL (its end frame), FAULT RECEIVED (its start frame: the whistle), a
-  BALL LOST tagged OFFSIDE or HAND BALL (its end frame). It
-  ends at the start of the next control event (the restart: a set piece, a goal-kick pass, ...).
+  BALL LOST tagged OFFSIDE, HAND BALL, FORCED ("play is halted by the referee"), VOLUNTARY (ball
+  given up, e.g. for an injury) or END HALF (its end frame), and a PASS tagged OFFSIDE (its end
+  frame). It ends at the start of the next control event (the restart: a set piece, a
+  goal-kick pass, ...). FORCED / VOLUNTARY / END HALF and PASS-OFFSIDE were added on 11 Nov
+  (docs/events_rules_review.md, issues 1 and 4): before that those stoppages were labelled live.
 - Graded frames per period run from its first event (the kickoff) to its last event's end.
   Everything else is X (ungraded), like halftime in our match.
 
@@ -38,8 +41,12 @@ HOME, AWAY = 0, 1
 IN_PLAY = {"PASS", "SHOT", "CARRY", "RECOVERY", "BALL LOST", "SET PIECE"}
 CONTROL = {"PASS", "SHOT", "CARRY", "BALL LOST", "SET PIECE"}
 TOUCH_SUBTYPES = ("HEAD", "CLEARANCE")
-# BALL LOST subtypes that mean the referee stopped play (Game 3 tags these instead of a foul).
-WHISTLE_SUBTYPES = ("OFFSIDE", "HAND BALL")
+# BALL LOST subtypes that mean play stopped (Game 3 tags OFFSIDE / HAND BALL instead of a foul;
+# FORCED is Metrica's "play is halted by the referee"; VOLUNTARY and END HALF stop it too).
+# Matched as substrings, so HEAD-FORCED and GOAL KICK-END HALF count.
+WHISTLE_SUBTYPES = ("OFFSIDE", "HAND BALL", "FORCED", "VOLUNTARY", "END HALF")
+# PASS subtypes that stop play (an offside flagged on the pass itself, Game 3).
+PASS_WHISTLE_SUBTYPES = ("OFFSIDE",)
 
 
 def is_control(event):
@@ -62,6 +69,8 @@ def dead_start(event):
     if event["type"] == "FAULT RECEIVED":
         return event["start"]
     if event["type"] == "BALL LOST" and any(w in event["subtype"] for w in WHISTLE_SUBTYPES):
+        return end
+    if event["type"] == "PASS" and any(w in event["subtype"] for w in PASS_WHISTLE_SUBTYPES):
         return end
     return None
 

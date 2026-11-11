@@ -93,3 +93,16 @@ play but only `BALL LOST-OFFSIDE` is handled, so up to 40 s is labelled live. Ne
 6 Nov 2026: **option 2, document only.** The rules stay as they are until after selection;
 issues 1–4 are noted in the technical document (sections 3–5). The `CHALLENGE` sentence in the
 module docstring is still inaccurate (issue 3); the tech doc describes what the code does.
+
+## Follow-up, 11 Nov 2026 (branch `refinement`, after selection)
+
+Issues 1 and 4 fixed in `events.py`: `BALL LOST` tagged `FORCED` (also `HEAD-FORCED`),
+`VOLUNTARY` or `END HALF`, and a `PASS` tagged `OFFSIDE`, now make the ball dead from the event's
+end frame until the restart. Tests in `tests/test_external_events.py`. Effect on the reference,
+frames only ever turn live → dead: Game 1 2,366 frames (1.7% of graded), dead 39.3% → 41.0%,
+possessions / 90' 267 → 269; Game 3 3,774 frames (2.6%), dead 27.6% → 30.2%, 377 → 382.
+Issue 3 (the `CHALLENGE` docstring) was already corrected. Issue 2 (the `CARRY` convention) is
+not changed: which reading is right is a judgement about the official definition, not something
+the bench can decide, and it moves Game 3's possession count by a fifth.
+The evidence models and the `v3` / `v4` settings are re-fitted on the corrected labels; the
+submitted file on `main` is unaffected unless the branch is merged.

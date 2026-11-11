@@ -88,6 +88,15 @@ def as_dict(names, bias, weights):
             "weights": [round(float(w), 10) for w in weights]}
 
 
+def fit_models(games):
+    """(dead_model, team_model, (n_motion, n_ball, n_team)) fitted on rows() of some games.
+    Shared with tools/logo.py, which fits on one game at a time."""
+    motion, n_motion = fit(games, evidence.motion_design, "all", True)
+    ball, n_ball = fit(games, evidence.ball_design, "seen", True)
+    team_model, n_team = fit(games, evidence.team_design, "live", False)
+    return {"motion": motion, "ball": ball}, team_model, (n_motion, n_ball, n_team)
+
+
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -100,10 +109,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     config.seed_everything()
     tuning = rows(bench.TUNING)
-    motion, n_motion = fit(tuning, evidence.motion_design, "all", True)
-    ball, n_ball = fit(tuning, evidence.ball_design, "seen", True)
-    team_model, n_team = fit(tuning, evidence.team_design, "live", False)
-    dead_model = {"motion": motion, "ball": ball}
+    dead_model, team_model, (n_motion, n_ball, n_team) = fit_models(tuning)
+    motion, ball = dead_model["motion"], dead_model["ball"]
 
     for title, model, n in (("dead, no ball (motion only)", motion, n_motion),
                             ("dead, ball tracked", ball, n_ball),
