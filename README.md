@@ -118,13 +118,17 @@ the ground truth or the provided video. External data lives outside this repo un
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
 | Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning (Games 1, 3) and held-out comparison (Game 2) |
+| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Branch `refinement` only: matches 12, 13, 15 tuning, 11, 14, 16, 17 held out (`espadas/external/__init__.py`) |
 
 Reference labels on external games are derived **by code** from each game's event data
-(`espadas/external/events.py`, rules documented there). No hand labels are used.
+(`espadas/external/events.py`, rules documented there); on the IDSSE matches from the
+provider's per-frame ball status and possession flags (`espadas/external/idsse.py`). No hand
+labels are used.
 
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
 python tools/fetch_metrica.py                      # download, pinned to one commit
+python tools/fetch_idsse.py                        # IDSSE, figshare v1, MD5-checked (~2.6 GB)
 python -m espadas.external.bench --labeler v1 v3 v4  # score labelers on the tuning games (1 and 3)
 python tools/tune_v1.py                            # re-tune v1 on the tuning games (prints PARAMS)
 python tools/fit_evidence.py                       # refit the Phase 5 evidence models (writes evidence_models.py)

@@ -24,17 +24,23 @@ import numpy as np
 from .. import abstain, config, labelers, v2
 from . import degrade
 from . import events as ev
-from . import metrica_csv, metrica_epts
+from . import idsse, metrica_csv, metrica_epts
 # Agreed split (checklist 4.4): tune on 1 and 3, hold out 2 for the final comparison only.
 # Defined in the package so the readers enforce the same rule.
-from . import HELD_OUT, TUNING, HeldOutError, check_split  # noqa: F401
+from . import (ALL_HELD_OUT, HELD_OUT, IDSSE_HELD_OUT, IDSSE_TUNING, TUNING,  # noqa: F401
+               HeldOutError, check_split)
 
 pm = config.pm
 
 GAMES = {1: metrica_csv.load_game, 2: metrica_csv.load_game, 3: metrica_epts.load_game}
+GAMES.update({n: idsse.load_game for n in idsse.MATCHES})   # 11-17: DFL / Sportec IDSSE
 
 
 def reference(game):
+    """(labels, half_blocks, kickoffs). Metrica: from the events by code (events.py); IDSSE: the
+    reader builds it from the provider's per-frame ball status and possession flags."""
+    if game.get("reference") is not None:
+        return game["reference"]
     labels, half_blocks, kickoffs = ev.labels_from_events(game["events"], game["n_frames"])
     return labels, half_blocks, kickoffs
 
@@ -123,7 +129,7 @@ def main(argv=None):
     parser.add_argument("--no-abstain", action="store_true",
                         help="force the X policy off (wins over --abstain)")
     args = parser.parse_args(argv)
-    held = sorted(set(args.games) & set(HELD_OUT))
+    held = sorted(set(args.games) & set(ALL_HELD_OUT))
     if held and not args.heldout:
         parser.error("game {} is held out: it is scored once, at selection, by "
                      "tools/selection.py. Score the tuning games ({}) instead, or add --heldout "
@@ -141,7 +147,7 @@ def main(argv=None):
         for n, game in games:
             r = score(name, game, args.hide_ball if args.hide_ball >= 0 else None, args.blur,
                       force)
-            split = "tune" if n in TUNING else "HELDOUT"
+            split = "tune" if n in TUNING + IDSSE_TUNING else "HELDOUT"
             print("{:<10}{:<10}{:<9}{:>9.4f}{:>10.4f}{:>9.4f}{:>8}{:>8}{:>8}".format(
                 name, game["name"], split, r["spell_f1_mean"], r["spell_f1_at_headline"],
                 r["macro_f1"], r["n_pred_spells"], r["n_gt_spells"], r["n_abstain_on_graded"]))
