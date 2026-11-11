@@ -27,18 +27,24 @@ HOME, AWAY, NONE = v1.HOME, v1.AWAY, v1.NONE
 # 6.7b (5 Nov): carrier touches tried, each mode fully re-tuned the same way: kink 0.5386,
 # both 0.5388, carrier 0.5362. No gain (v4 gained +0.014): the CUSUM adds every touch as a
 # pulse, so the noisier carrier team calls cancel out what they add. v3 stays on "kink".
+# 11 Nov (branch `refinement`): re-tuned on the 5-game development pool (Metrica 1, 3 with the
+# corrected stoppage labels + IDSSE 12, 13, 15), evidence models refitted on the same pool:
+# mean spellF1 0.5408 -> 0.5560 in-sample; 0.569 / 0.545 at 15% / 35% missing. Leave-one-game-
+# out with re-tuning (tools/logo.py): 0.5408 vs 0.5316 for the previous settings, better on 4 of
+# 5 games (all three IDSSE). Moved: dead_threshold 1.0 -> -0.5, min_dead 50 -> 100, switch_cost
+# 60 -> 45, kink_half 6 -> 4, kink_threshold 3 -> 5, hold_reach 3 -> 2.
 PARAMS = dict(v2.PARAMS, **{
     "dead_smooth": 0,
-    "dead_threshold": 1.0,
-    "min_dead": 50,
+    "dead_threshold": -0.5,
+    "min_dead": 100,
     "min_alive": 25,
     "team_cap": 2.0,
-    "switch_cost": 60.0,
-    "kink_half": 6,          # frames each side over which the velocity change is measured
-    "kink_threshold": 3.0,   # m/s velocity change for a touch
+    "switch_cost": 45.0,
+    "kink_half": 4,          # frames each side over which the velocity change is measured
+    "kink_threshold": 5.0,   # m/s velocity change for a touch
     "touch_reach": 1.5,      # m; nearest player must be this close at a touch
     "chain_gap": 25,         # frames; same-team next touch within this confirms control
-    "hold_reach": 3.0,       # m
+    "hold_reach": 2.0,       # m
     "hold_frames": 50,       # frames the same player must stay with the ball (0 = off)
     "confirm_weight": 20.0,  # pulse for a confirmed touch
     "touch_weight": 30.0,    # pulse for any other touch

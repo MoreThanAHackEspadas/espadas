@@ -27,7 +27,8 @@ from . import events as ev
 from . import idsse, metrica_csv, metrica_epts
 # Agreed split (checklist 4.4): tune on 1 and 3, hold out 2 for the final comparison only.
 # Defined in the package so the readers enforce the same rule.
-from . import (ALL_HELD_OUT, HELD_OUT, IDSSE_HELD_OUT, IDSSE_TUNING, TUNING,  # noqa: F401
+from . import (ALL_HELD_OUT, DEV_TUNING, HELD_OUT, IDSSE_HELD_OUT, IDSSE_TUNING,  # noqa: F401
+               TUNING,
                HeldOutError, check_split)
 
 pm = config.pm

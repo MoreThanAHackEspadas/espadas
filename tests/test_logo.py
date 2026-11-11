@@ -34,4 +34,4 @@ def test_logo_never_reads_the_held_out_game(monkeypatch):
     monkeypatch.setattr(logo.bench, "available", lambda numbers, heldout=False:
                         seen.append((list(numbers), heldout)) or [])
     assert logo.main(["--labeler", "v4"]) == 1        # nothing downloaded -> clean exit
-    assert seen == [(list(logo.bench.TUNING), False)]
+    assert seen == [(list(logo.bench.DEV_TUNING), False)]

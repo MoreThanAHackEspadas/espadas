@@ -3,13 +3,13 @@
     python tools/logo.py                         # v3 and v4, both folds, all tracker levels
     python tools/logo.py --labeler v4 --levels medium --sweeps 1    # quick look
 
-Each fold uses one tuning game (Metrica 1 or 3) for everything that is fitted or tuned, and
-scores the other one:
-1. the two evidence models are refitted on the training game only (tools/fit_evidence.py's
+Each fold leaves one game of --games out (default bench.DEV_TUNING: Metrica 1, 3 and IDSSE 12,
+13, 15), fits and tunes on the others, and scores the one left out:
+1. the two evidence models are refitted on the training games only (tools/fit_evidence.py's
    fit_models, same rows: every tracker level, ball hidden on degrade.LIVE_MISSING of live frames);
-2. the labeler's settings are re-tuned on the training game only (tools/tune.py's descend, same
-   grid and objective: mean spellF1 over the tracker levels), starting from the shipped PARAMS;
-3. the test game is scored with those models and settings, at every tracker level.
+2. the labeler's settings are re-tuned on the training games only (tools/tune.py's descend, same
+   grid and objective: mean spellF1 over games and tracker levels), from the shipped PARAMS;
+3. the left-out game is scored with those models and settings, at every tracker level.
 
 Printed per fold: the training score (in-sample), the test score with the re-tuned settings
 (out-of-sample: the number that matters) and the test score with the shipped settings (fold
@@ -70,9 +70,10 @@ def views(game, levels, hide=HIDE_BALL):
     return out
 
 
-def fit_on(game_views, name):
+def fit_on(train):
+    """Evidence models fitted on [(name, views)] training games."""
     rows = [(name + "/" + level, gt, evidence.clues(tracking), graded)
-            for level, gt, _, tracking, graded in game_views]
+            for name, game_views in train for level, gt, _, tracking, graded in game_views]
     dead_model, team_model, _ = fit_evidence.fit_models(rows)
     return dead_model, team_model
 
@@ -83,22 +84,25 @@ def features(module, game_views, name):
             for _, _, gt_codes, tracking, graded in game_views]
 
 
-def run_fold(module, train, test, levels, sweeps, log):
-    (train_name, train_views), (test_name, test_views) = train, test
+def run_fold(module, train, test, levels, sweeps, log, workers=1):
+    """train: [(name, views)] games to fit and tune on; test: (name, views) the game left out."""
+    test_name, test_views = test
     t0 = time.time()
-    dead_model, team_model = fit_on(train_views, train_name)
+    dead_model, team_model = fit_on(train)
     with using_models(dead_model, team_model):
-        train_rows = features(module, train_views, train_name)
+        train_rows = [row for name, views in train for row in features(module, views, name)]
         test_rows = features(module, test_views, test_name)
     old_sweeps, tune.MAX_SWEEPS = tune.MAX_SWEEPS, sweeps
     try:
-        train_score, params = tune.descend(module, train_rows, module.PARAMS, log=log)
+        with tune.parallel(module, train_rows, workers):
+            train_score, params = tune.descend(module, train_rows, module.PARAMS, log=log)
     finally:
         tune.MAX_SWEEPS = old_sweeps
     test_score, per_level = tune.objective(module, test_rows, params)
     shipped_score, shipped_levels = tune.objective(module, test_rows, module.PARAMS)
     changed = {k: v for k, v in params.items() if module.PARAMS.get(k) != v}
-    return {"train": train_name, "test": test_name, "train_score": train_score,
+    return {"train": "+".join(name for name, _ in train), "test": test_name,
+            "train_score": train_score,
             "test_score": test_score, "test_levels": per_level, "shipped_score": shipped_score,
             "shipped_levels": shipped_levels, "changed": changed, "seconds": time.time() - t0}
 
@@ -111,25 +115,34 @@ def main(argv=None):
     parser.add_argument("--sweeps", type=int, default=tune.MAX_SWEEPS,
                         help="coordinate-descent sweeps per fold (default {})".format(
                             tune.MAX_SWEEPS))
+    parser.add_argument("--games", nargs="+", type=int, default=list(bench.DEV_TUNING),
+                        help="games to rotate through (default {})".format(
+                            " ".join(map(str, bench.DEV_TUNING))))
+    parser.add_argument("--leave-out", nargs="+", type=int, default=None,
+                        help="only these folds (games left out); default every game")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="processes scoring the training views in parallel (same result)")
     parser.add_argument("--verbose", action="store_true", help="print the descent")
     args = parser.parse_args(argv)
     config.seed_everything()
     log = print if args.verbose else (lambda *a, **k: None)
 
-    games = {n: game for n, game in bench.available(bench.TUNING)}
+    games = {n: game for n, game in bench.available(args.games)}
     if len(games) < 2:
-        print("need both tuning games downloaded (tools/fetch_metrica.py)")
+        print("need at least two tuning games downloaded (tools/fetch_metrica.py, fetch_idsse.py)")
         return 1
     loaded = {n: (games[n]["name"], views(games[n], args.levels)) for n in games}
-    folds = [(a, b) for a in sorted(loaded) for b in sorted(loaded) if a != b]
+    del games
+    left_out = args.leave_out or sorted(loaded)
+    folds = [([loaded[a] for a in sorted(loaded) if a != b], loaded[b]) for b in left_out]
 
     print("leave-one-game-out, levels {}, ball hidden on {:.0%} of live frames".format(
         " ".join(args.levels), HIDE_BALL))
     for name in args.labeler:
         module = importlib.import_module("espadas." + name)
         results = []
-        for a, b in folds:
-            r = run_fold(module, loaded[a], loaded[b], args.levels, args.sweeps, log)
+        for train, test in folds:
+            r = run_fold(module, train, test, args.levels, args.sweeps, log, args.workers)
             results.append(r)
             print("\n{}  train {} -> test {}   ({:.0f} s)".format(name, r["train"], r["test"],
                                                                 r["seconds"]))

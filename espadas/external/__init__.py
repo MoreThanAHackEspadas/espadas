@@ -18,9 +18,11 @@ TUNING, HELD_OUT = (1, 3), (2,)
 # DFL / Sportec IDSSE matches (espadas/external/idsse.py, game numbers 11-17), split on 11 Nov 2026
 # on branch `refinement` before any of them was scored: one Bundesliga match on each side, the
 # rest 2. Bundesliga. Held-out ones are scored only for a pre-registered comparison, like Game 2.
-# Not yet part of TUNING: tools/tune.py, fit_evidence.py and logo.py still use Metrica 1 + 3.
 IDSSE_TUNING, IDSSE_HELD_OUT = (12, 13, 15), (11, 14, 16, 17)
 ALL_HELD_OUT = HELD_OUT + IDSSE_HELD_OUT
+# Development pool on `refinement`: every game that may be fitted or tuned on (tools/tune.py,
+# fit_evidence.py, logo.py, scoreboard.py default to it there).
+DEV_TUNING = TUNING + IDSSE_TUNING
 
 
 class HeldOutError(RuntimeError):

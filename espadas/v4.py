@@ -90,36 +90,44 @@ START = np.array([0.0, NEG, 0.0, NEG, 0.0])   # a half starts in control or dead
 # level 0.590 / 0.581 / 0.504 / 0.547, ahead at every level). kink_half 10 checked against 16 / 25
 # (0.551 / 0.540): a real peak. With hold_frames 0 a touch is confirmed only by a same-team next
 # touch within chain_gap.
-# Held-out Game 2 not scored: done once at selection (Phase 9). run.py keeps v1 as the default.
+# Held-out Game 2 was scored once, at selection (10 Nov, docs/selection.md).
+# 11 Nov (branch `refinement`): re-tuned on the 5-game development pool (Metrica 1, 3 with the
+# corrected stoppage labels + IDSSE 12, 13, 15), evidence models refitted on the same pool: mean
+# spellF1 0.5339 -> 0.5659 in-sample; 0.579 / 0.553 at 15% / 35% missing. Leave-one-game-out with
+# re-tuning (tools/logo.py): 0.5452 (v3 0.5408), ahead of v3 on all three IDSSE games. Moved:
+# dead_bias 2.0 -> -1.0, w_dead 16.0 -> 4.0, team_cap 1.0 -> 5.0, w_team 1.0 -> 2.0, w_touch 5.0
+# -> 2.0, w_touch_own 20.0 -> 10.0, loose_reach 2.0 -> 5.0, c_stop 160.0 -> 5.0, min_dead 75 ->
+# 50, min_alive 0 -> 25, kink_threshold 8.0 -> 3.0, chain_gap 25 -> 100, hold_frames 0 -> 12,
+# carrier_reach 2.0 -> 1.5, carrier_frames 12 -> 3.
 PARAMS = {
     "dead_smooth": 0,
-    "dead_bias": 2.0,        # log-odds, frames with a ball only
-    "w_dead": 16.0,
-    "team_cap": 1.0,
-    "w_team": 1.0,
+    "dead_bias": -1.0,        # log-odds, frames with a ball only
+    "w_dead": 4.0,
+    "team_cap": 5.0,
+    "w_team": 2.0,
     "loose_scale": 0.0,
     "w_confirm": 5.0,
-    "w_touch": 5.0,
-    "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
+    "w_touch": 2.0,
+    "w_touch_own": 10.0,      # credit to the toucher's own states for a lone touch
     "w_ctrl": 1.0,
     "w_loose": 0.5,
     "ctrl_reach": 5.0,       # m
-    "loose_reach": 2.0,      # m
+    "loose_reach": 5.0,      # m
     "c_loose": 2.0,
     "c_turnover": 20.0,
-    "c_stop": 160.0,
+    "c_stop": 5.0,
     "c_restart": 160.0,
-    "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
-    "min_alive": 0,          # frames; shorter live spells between two stoppages become dead
+    "min_dead": 50,          # frames; shorter decoded dead spells go to the team around them
+    "min_alive": 25,          # frames; shorter live spells between two stoppages become dead
     "kink_half": 10,
-    "kink_threshold": 8.0,
+    "kink_threshold": 3.0,
     "touch_reach": 3.0,
-    "chain_gap": 25,
+    "chain_gap": 100,
     "hold_reach": 1.0,
-    "hold_frames": 0,
+    "hold_frames": 12,
     "touch_mode": "both",    # 6.7: kink touches + carrier touches (touches.carrier)
-    "carrier_reach": 2.0,    # m; nearest player this close = the ball's carrier
-    "carrier_frames": 12,    # frames a carrier spell must last to count
+    "carrier_reach": 1.5,    # m; nearest player this close = the ball's carrier
+    "carrier_frames": 3,    # frames a carrier spell must last to count
 }
 
 GRID = {
