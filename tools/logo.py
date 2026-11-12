@@ -141,10 +141,15 @@ def main(argv=None):
     parser.add_argument("--evidence", choices=fit_evidence.KINDS, default="logistic",
                         help="evidence models fitted in every fold: logistic (the shipped kind) "
                              "or boosted trees")
+    parser.add_argument("--context", nargs="+", type=int, default=None,
+                        help="experiment: frames each side for the smoothed clue copies, "
+                             "instead of evidence.CONTEXT (refinement 2, step 4)")
     parser.add_argument("--verbose", action="store_true", help="print the descent")
     args = parser.parse_args(argv)
     global EVIDENCE
     EVIDENCE = args.evidence
+    if args.context:
+        evidence.CONTEXT = tuple(args.context)
     spent = False
     if args.pool:
         args.games, spent = bench.pool(args.pool)
@@ -161,7 +166,8 @@ def main(argv=None):
              for b in left_out]
 
     print("leave-one-game-out, levels {}, ball hidden on {:.0%} of live frames, {} evidence"
-          .format(" ".join(args.levels), HIDE_BALL, EVIDENCE))
+          .format(" ".join(args.levels), HIDE_BALL, EVIDENCE)
+          + ("" if not args.context else ", context {}".format(evidence.CONTEXT)))
     for name in args.labeler:
         module = importlib.import_module("espadas." + name)
         results = []
