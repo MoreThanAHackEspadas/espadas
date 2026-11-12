@@ -32,9 +32,16 @@ def main(argv=None):
     parser.add_argument("--levels", nargs="+", default=list(degrade.TRACKER_LEVELS),
                         choices=list(degrade.TRACKER_LEVELS))
     parser.add_argument("--hides", nargs="+", type=float, default=[degrade.LIVE_MISSING])
+    parser.add_argument("--pool", choices=sorted(bench.POOLS), default=None,
+                        help="named pool instead of --games: dev (the default games) or full "
+                             "(all ten external matches, incl. the spent held-out ones; "
+                             "docs/refinement2_rule.md)")
     args = parser.parse_args(argv)
     config.seed_everything()
-    games = bench.available(args.games)          # refuses held-out games
+    spent = False
+    if args.pool:
+        args.games, spent = bench.pool(args.pool)
+    games = bench.available(args.games, heldout=spent)   # refuses held-out games without --pool full
     results = {}
     for hide in args.hides:
         print("\nball hidden on {:.0%} of live frames".format(hide))

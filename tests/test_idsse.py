@@ -137,3 +137,12 @@ def test_flicker_resolves_to_one_change():
 
 def test_long_spells_unchanged():
     assert run("HHHHAAAAHHHHDDDAAAA") == "HHHHAAAAHHHHDDDAAAA"
+
+
+def test_pools():
+    assert external.pool("dev") == (external.DEV_TUNING, False)
+    games, spent = external.pool("full")
+    assert spent and len(games) == 10 and set(games) == {1, 2, 3} | set(idsse.MATCHES)
+    # the guard itself is unchanged: the spent games still need the explicit opt-in
+    with pytest.raises(external.HeldOutError):
+        external.check_split(games)
