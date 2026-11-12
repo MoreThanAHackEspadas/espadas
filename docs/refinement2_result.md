@@ -215,3 +215,47 @@ to fit the shipped models, so this describes the errors; it is not a test score.
 
 No decoder change has been made. A change aimed at 2–5 s possessions is the lever with the most
 room, and also the one most exposed to the reference conventions differing between providers.
+
+## Step 5: why the short possessions are missed — no decoder change (12 Nov)
+
+Three more measurements on the same setting (shipped `v4`, five-match pool, in-sample), made
+before touching the decoder.
+
+**1. What is predicted over a missed possession** (`tools/spell_diag.py`, all levels pooled):
+
+| Possession length | Missed | Mostly the same team | Mostly the other team | Mostly dead |
+|---|---|---|---|---|
+| < 2 s | 1239 | 448 | 732 | 59 |
+| 2–5 s | 1365 | 609 | 687 | 69 |
+| 5–15 s | 718 | 507 | 172 | 39 |
+| > 15 s | 179 | 152 | 7 | 20 |
+
+Under 5 s, more than half of the misses are labelled the other team: swallowed by the
+opponent's possession around them. ("Same team" = right team, but the predicted possession is
+too long or too short to match, mostly because a neighbouring short possession was swallowed.)
+
+**2. Stoppages are not the cause.** A reference stoppage between two possessions is predicted
+dead over most of its length in 92–98% of cases when it lasts over 5 s (same team either side;
+74–95% with different teams). Stoppages under 5 s are rare: 160 of 1940.
+
+**3. The decoder is not what blocks the switch; the evidence points the wrong way.** For the
+reference possessions labelled the other team:
+
+| Possession length | Frames where the team evidence favours the right team | Possessions whose summed evidence would pay for the switch (cost 44) |
+|---|---|---|
+| < 2 s | 10% | 0% |
+| 2–5 s | 16% | 1% |
+| 5–15 s | 26% | 13% |
+
+The ball is tracked on 72–79% of those frames, so a hidden ball is not the reason. Even the raw
+clue is wrong there: with the ball tracked, the nearest player belongs to the right team on
+40–44% of the frames of those possessions, worse than a coin (light and heavy levels). Over
+*all* reference possessions it is 51% under 2 s, 57% for 2–5 s, 69% for 5–15 s.
+
+**Conclusion.** Short reference possessions are mostly not visible in who is near the ball: the
+ball is in flight, contested, or the possession exists by the annotation convention (a pass
+received and released, the IDSSE 1 s touch rule). No transition cost or duration model can
+recover a possession for which the evidence favours the opponent on 85% of its frames; lowering
+the switching cost would add switches where the evidence is noisy, i.e. flicker. The plan's own
+stop condition for this step applies, and **the decoder is left unchanged**. The same finding
+limits step 7 (carrier-touch attribution), which rests on the same nearest-player geometry.

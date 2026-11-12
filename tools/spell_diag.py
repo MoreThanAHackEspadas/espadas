@@ -5,7 +5,9 @@
 Reference and predicted possessions are matched as the official metric does (one to one, same
 team, IoU >= the headline 0.5), then split by length. Per length bin, pooled over the games and
 tracker levels: how many reference possessions were found (recall), how many predicted ones are
-real (precision). The models and settings are the shipped ones, which were fitted on these
+real (precision). For the missed reference possessions, what was predicted over most of their
+frames: the same team (found but mistimed, or split), the other team (merged into the opponent)
+or dead. The models and settings are the shipped ones, which were fitted on these
 games: a description of the errors, not a test score. External tuning games only. Nothing is
 written. Deterministic.
 """
@@ -42,7 +44,13 @@ def spells(game, labeler, hide, level):
             break
         if not gt_hit[i] and not pred_hit[j]:
             gt_hit[i] = pred_hit[j] = True
-    return gt_spells, pred_spells, gt_hit, pred_hit, tracking.get("fps", config.FPS)
+    over = np.zeros(len(gt_spells), dtype=int)       # 0 same team, 1 other team, 2 dead / none
+    for i, (a, b, code) in enumerate(gt_spells):
+        same = np.mean(filled[a:b] == code)
+        other = np.mean(np.isin(filled[a:b], [k for k in pm.POSSESSION_LABELS if k != code]))
+        over[i] = 0 if same >= max(other, 1 - same - other) else (
+            1 if other >= 1 - same - other else 2)
+    return gt_spells, pred_spells, gt_hit, pred_hit, over, tracking.get("fps", config.FPS)
 
 
 def main(argv=None):
@@ -52,10 +60,10 @@ def main(argv=None):
     parser.add_argument("--levels", nargs="+", default=list(degrade.TRACKER_LEVELS))
     args = parser.parse_args(argv)
     config.seed_everything()
-    counts = {level: np.zeros((len(BINS), 4)) for level in list(args.levels) + ["all"]}
+    counts = {level: np.zeros((len(BINS), 7)) for level in list(args.levels) + ["all"]}
     for _, game in bench.available(args.games):
         for level in args.levels:
-            gt_spells, pred_spells, gt_hit, pred_hit, fps = spells(
+            gt_spells, pred_spells, gt_hit, pred_hit, over, fps = spells(
                 game, args.labeler, degrade.LIVE_MISSING, level)
             for which, (group, hit) in enumerate(((gt_spells, gt_hit), (pred_spells, pred_hit))):
                 seconds = np.array([(b - a) / float(fps) for a, b, _ in group])
@@ -64,14 +72,19 @@ def main(argv=None):
                     for key in (level, "all"):
                         counts[key][k, 2 * which] += inside.sum()
                         counts[key][k, 2 * which + 1] += hit[inside].sum()
+                        if which == 0:
+                            for reason in range(3):
+                                counts[key][k, 4 + reason] += (
+                                    inside & ~hit & (over == reason)).sum()
     for key, c in counts.items():
         print("\n{} at IoU {}, level {}".format(args.labeler, pm.SPELL_IOU_HEADLINE, key))
-        print("{:<8}{:>10}{:>9}{:>9}{:>11}{:>9}{:>11}".format(
-            "length", "reference", "found", "recall", "predicted", "real", "precision"))
+        print("{:<8}{:>10}{:>9}{:>9}{:>11}{:>9}{:>11}   {}".format(
+            "length", "reference", "found", "recall", "predicted", "real", "precision",
+            "missed: same team / other team / dead"))
         for (_, _, label), row in zip(BINS + ((0, 0, "all"),), list(c) + [c.sum(axis=0)]):
-            print("{:<8}{:>10.0f}{:>9.0f}{:>9.3f}{:>11.0f}{:>9.0f}{:>11.3f}".format(
-                label, row[0], row[1], row[1] / max(row[0], 1), row[2], row[3],
-                row[3] / max(row[2], 1)))
+            print("{:<8}{:>10.0f}{:>9.0f}{:>9.3f}{:>11.0f}{:>9.0f}{:>11.3f}   {:.0f} / {:.0f} / {:.0f}"
+                  .format(label, row[0], row[1], row[1] / max(row[0], 1), row[2], row[3],
+                          row[3] / max(row[2], 1), row[4], row[5], row[6]))
     return 0
 
 
