@@ -259,3 +259,24 @@ recover a possession for which the evidence favours the opponent on 85% of its f
 the switching cost would add switches where the evidence is noisy, i.e. flicker. The plan's own
 stop condition for this step applies, and **the decoder is left unchanged**. The same finding
 limits step 7 (carrier-touch attribution), which rests on the same nearest-player geometry.
+
+## Step 3 candidate built once on our match (13 Nov) — rule 5(d), diagnostic only
+
+The candidate as it would ship: boosted evidence models fitted on the five-match pool
+(`tools/fit_evidence.py --model boosted`), `v4` re-tuned on top (`tools/tune.py --labeler v4`;
+in-sample 0.5989, 0.6115 / 0.5824 at 15% / 35% hidden), built in a separate worktree from
+`b750823`. Aggregates only; by rule 8 none of these numbers decides anything.
+
+| | Frozen `main@53861c0` | Step 3 candidate |
+|---|---|---|
+| Validator | pass | pass |
+| Two builds, same bytes | yes | yes |
+| SHA-256 | `7782b52f…56eb` | `35edbf42…6305` |
+| Possessions (per 90') | 311 (264) | 300 (255) |
+| Mean possession | 11.6 s | 12.4 s |
+| Home share of possession | 62% | 61% |
+| Labels H / A / D / X | 55,634 / 34,287 / 68,936 / 40,462 | 56,386 / 36,399 / 66,072 / 40,462 |
+
+Rule 5(d) is met. The output is of the same kind as the frozen one (a few fewer, slightly longer
+possessions; 2,864 fewer dead frames). Rule 5(a) is still not met, so this does not change the
+outcome: `main@53861c0` ships.
