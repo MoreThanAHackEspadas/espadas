@@ -4,7 +4,10 @@ Judged by `docs/refinement2_rule.md` (pushed in `8b6b7d3` before any of these nu
 All scores: spellF1 on the game left out, mean over the four tracker levels, `X` off; 25% of the
 live ball hidden unless stated. Our match is not used anywhere here.
 
-**Steps tried so far: 5 runs (steps 1, 2, 3, 4 and the combination 2 + 3).** Kept: step 3 (five-match pool). Adopted: none; no candidate meets rule 5(a) yet. The frozen submission is still `main@53861c0`.
+**Steps tried: 6 runs (steps 1, 2, 3, 4, the combination 2 + 3, and the player-level team model
+of 13 Nov, last section).** Step 5 was measured only. The player-level model, built on step 3,
+meets every condition of rule 5 and is the one final candidate (branch `architecture-review`).
+Until the team merges it, the submission is still `main@53861c0`.
 
 ## Baseline: the frozen method through leave-one-game-out (11 Nov)
 
@@ -280,3 +283,97 @@ in-sample 0.5989, 0.6115 / 0.5824 at 15% / 35% hidden), built in a separate work
 Rule 5(d) is met. The output is of the same kind as the frozen one (a few fewer, slightly longer
 possessions; 2,864 fewer dead frames). Rule 5(a) is still not met, so this does not change the
 outcome: `main@53861c0` ships.
+
+## Player-level team evidence (13 Nov, branch `architecture-review`) — meets rule 5
+
+**Why this step.** `tools/ceiling_diag.py` scores the shipped `v4` on the five-match pool with one
+part at a time replaced by the reference (in-sample upper bounds, not test scores):
+
+| Variant | spellF1 |
+|---|---|
+| Shipped `v4` | 0.566 |
+| Reference dead / live, our team calls | 0.623 |
+| Our dead / live, reference team where both say live | 0.901 |
+| Reference possessions, each one's team by our majority vote | 0.705 |
+| The reference with every possession under 5 s merged away | 0.568 |
+| The reference with every possession under 2 s merged away | 0.841 |
+| The reference delayed by 0.5 s / 1 s | 0.875 / 0.674 |
+
+Stoppages and the decoder are not where the score is lost; the team evidence is. With no ball
+hidden at all the shipped `v4` scores 0.614 at the medium level (about 0.578 with 25% hidden),
+so a ball detector on the video would be worth at most about +0.035.
+
+**The change** (`tools/fit_evidence.py --model players`, `evidence.player_design`). The team
+model keeps the 18 team-level clues and adds 35 more (53 in all): the last-seen ball's position
+along the pitch, the nearest-player difference 0.5, 1 and 2 s earlier and later, ball speed, the
+length of the current ball gap, and for each team the distances of its three nearest players to
+the last-seen ball, its nearest distance 0.5, 1 and 2 s earlier and later, and the frames since
+and until one of its players has the tracked ball within 1.5 m and within 3 m. Boosted trees
+(depth 5, 300 trees, otherwise the step 3 settings; chosen once, not searched), trained on every
+fifth frame and its team-swapped copy, evaluated as half the difference between a frame and its
+swapped copy. The dead models are the boosted ones of step 3. The decoder is unchanged.
+
+**Per frame, on the match left out** (team model only):
+
+| Team model | Log-loss | Accuracy | Accuracy, ball not tracked |
+|---|---|---|---|
+| Boosted, team-level clues (step 3) | 0.2927 | 0.8725 | 0.7895 |
+| Boosted, player-level | 0.2624 | 0.8862 | 0.8032 |
+
+Better on four of five matches; on Metrica 1 the log-loss is worse (0.2856 → 0.2990) with
+accuracy slightly up.
+
+**Leave-one-game-out** (`python tools/logo.py --labeler v4 --evidence players --workers 16`):
+
+| Game left out | Baseline | Step 3 | Player-level | Difference to baseline | 15% hidden | 35% hidden |
+|---|---|---|---|---|---|---|
+| Metrica 1 | 0.5609 | 0.5732 | 0.5993 | +0.0384 | 0.6138 | 0.5888 |
+| Metrica 3 | 0.5358 | 0.5537 | 0.5781 | +0.0423 | 0.5858 | 0.5549 |
+| IDSSE 12 | 0.5257 | 0.5545 | 0.6309 | +0.1052 | 0.6424 | 0.6268 |
+| IDSSE 13 | 0.5569 | 0.5805 | 0.6353 | +0.0784 | 0.6410 | 0.6314 |
+| IDSSE 15 | 0.5817 | 0.5947 | 0.6366 | +0.0549 | 0.6488 | 0.6233 |
+| **Mean** | **0.5522** | 0.5713 | **0.6160** | **+0.0638** | 0.6264 | 0.6050 |
+
+Mean train-test gap +0.089 (baseline +0.016): the model fits its training matches closely, so
+in-sample scores (about 0.70) are not results. The shipped settings with the fold's models score
+0.6210 on the left-out matches; as in every earlier step, re-tuning in the fold does not beat
+them.
+
+**Against rule 5:**
+
+| Condition | Needed | Result |
+|---|---|---|
+| (a) LOGO mean over the baseline | at least +0.02 | +0.0638 |
+| (b) games ahead | at least 70% | 5 of 5 |
+| (c) 15% / 35% hidden | not behind 0.5655 / 0.5397 | 0.6264 / 0.6050 |
+| (d) build on our match | validator and determinism pass | both pass |
+
+**The candidate** (commit `c858a16`): models fitted on the five-match pool, `v4` re-tuned on them
+(`tools/tune.py --labeler v4`). Settings moved: `dead_smooth` 0 → 6, `team_cap` 5 → 2, `w_team`
+2 → 4, `loose_scale` 0 → 1, `w_confirm` 5 → 0, `w_touch` 2 → 0, `w_touch_own` 10 → 20, `w_ctrl`
+1 → 0, `w_loose` 0.5 → 0, `c_loose` 2 → 20, `c_stop` 5 → 80, `min_dead` 50 → 75, `kink_threshold`
+3 → 1, `touch_reach` 3 → 4, `chain_gap` 100 → 25, `hold_reach` 1 → 1.5, `carrier_reach` 1.5 → 2.5,
+`carrier_frames` 3 → 6. The confirmed-touch weight and the nearest-player control / loose rule
+are tuned to zero: the team score now carries that information.
+
+On our match, aggregates only (rule 8: none of these decides anything):
+
+| | Frozen `main@53861c0` | Candidate |
+|---|---|---|
+| Validator | pass | pass |
+| Two builds, same bytes | yes | yes |
+| SHA-256 | `7782b52f…56eb` | `fba0c450…9741e` |
+| Possessions (per 90') | 311 (264) | 302 (257) |
+| Mean possession | 11.6 s | 12.4 s |
+| Home share of possession | 62% | 61% |
+| Labels H / A / D / X | 55,634 / 34,287 / 68,936 / 40,462 | 57,268 / 36,698 / 64,891 / 40,462 |
+
+**Known weaknesses.** (1) The train-test gap above. (2) The "ball at a player's feet" clues
+depend on how close a tracker puts players to the ball; ours is a third tracker, and the gain is
+smaller on Metrica (+0.04) than on IDSSE (+0.06 to +0.11). (3) This is the sixth run judged by
+the same leave-one-game-out (rule 9); the margin over the 0.02 bar is three times the bar.
+(4) The ten-match pool (rule 6) was not run for this model.
+
+**Outcome.** The one final candidate under rule 7, named on 13 Nov. Rule 10 applies once the team
+merges it: new SHA-256 in the README and tech doc (done on this branch), fresh-clone rebuild,
+determinism, data guard, then the tag.
