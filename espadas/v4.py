@@ -99,35 +99,40 @@ START = np.array([0.0, NEG, 0.0, NEG, 0.0])   # a half starts in control or dead
 # -> 2.0, w_touch_own 20.0 -> 10.0, loose_reach 2.0 -> 5.0, c_stop 160.0 -> 5.0, min_dead 75 ->
 # 50, min_alive 0 -> 25, kink_threshold 8.0 -> 3.0, chain_gap 25 -> 100, hold_frames 0 -> 12,
 # carrier_reach 2.0 -> 1.5, carrier_frames 12 -> 3.
+# 13 Nov (branch `architecture-review`): team evidence replaced by the player-level boosted
+# model (evidence.player_design), dead models boosted; re-tuned on the five-match pool.
+# Leave-one-game-out 0.6160 vs 0.5522 for the frozen method, ahead on 5 of 5 (15% / 35% hidden:
+# 0.6264 / 0.6050 vs 0.5655 / 0.5397). In-sample 0.70 is not a score: the new model fits its
+# training matches closely (train-test gap +0.089).
 PARAMS = {
-    "dead_smooth": 0,
+    "dead_smooth": 6,
     "dead_bias": -1.0,        # log-odds, frames with a ball only
     "w_dead": 4.0,
-    "team_cap": 5.0,
-    "w_team": 2.0,
-    "loose_scale": 0.0,
-    "w_confirm": 5.0,
-    "w_touch": 2.0,
-    "w_touch_own": 10.0,      # credit to the toucher's own states for a lone touch
-    "w_ctrl": 1.0,
-    "w_loose": 0.5,
+    "team_cap": 2.0,
+    "w_team": 4.0,
+    "loose_scale": 1.0,
+    "w_confirm": 0.0,
+    "w_touch": 0.0,
+    "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
+    "w_ctrl": 0.0,
+    "w_loose": 0.0,
     "ctrl_reach": 5.0,       # m
     "loose_reach": 5.0,      # m
-    "c_loose": 2.0,
+    "c_loose": 20.0,
     "c_turnover": 20.0,
-    "c_stop": 5.0,
+    "c_stop": 80.0,
     "c_restart": 160.0,
-    "min_dead": 50,          # frames; shorter decoded dead spells go to the team around them
+    "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
     "min_alive": 25,          # frames; shorter live spells between two stoppages become dead
     "kink_half": 10,
-    "kink_threshold": 3.0,
-    "touch_reach": 3.0,
-    "chain_gap": 100,
-    "hold_reach": 1.0,
+    "kink_threshold": 1.0,
+    "touch_reach": 4.0,
+    "chain_gap": 25,
+    "hold_reach": 1.5,
     "hold_frames": 12,
     "touch_mode": "both",    # 6.7: kink touches + carrier touches (touches.carrier)
-    "carrier_reach": 1.5,    # m; nearest player this close = the ball's carrier
-    "carrier_frames": 3,    # frames a carrier spell must last to count
+    "carrier_reach": 2.5,    # m; nearest player this close = the ball's carrier
+    "carrier_frames": 6,    # frames a carrier spell must last to count
 }
 
 GRID = {

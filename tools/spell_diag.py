@@ -1,0 +1,92 @@
+"""Diagnostic (refinement 2, step 5): which reference possessions does a labeler miss?
+
+    python tools/spell_diag.py                    # v4 on bench.DEV_TUNING, shipped models
+
+Reference and predicted possessions are matched as the official metric does (one to one, same
+team, IoU >= the headline 0.5), then split by length. Per length bin, pooled over the games and
+tracker levels: how many reference possessions were found (recall), how many predicted ones are
+real (precision). For the missed reference possessions, what was predicted over most of their
+frames: the same team (found but mistimed, or split), the other team (merged into the opponent)
+or dead. The models and settings are the shipped ones, which were fitted on these
+games: a description of the errors, not a test score. External tuning games only. Nothing is
+written. Deterministic.
+"""
+
+import argparse
+import os
+import sys
+
+import numpy as np
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from espadas import config, labelers  # noqa: E402
+from espadas.external import bench, degrade  # noqa: E402
+
+pm = config.pm
+BINS = ((0, 2, "< 2 s"), (2, 5, "2-5 s"), (5, 15, "5-15 s"), (15, 1e9, "> 15 s"))
+
+
+def spells(game, labeler, hide, level):
+    """(reference spells, predicted spells, matched-reference flags, matched-predicted flags)."""
+    gt_codes, tracking, graded = bench.setup(game, hide, level)
+    pred = np.asarray(labelers.LABELERS[labeler](tracking), dtype="<U1").copy()
+    pred[~graded] = "X"
+    runs = pm.valid_runs(gt_codes)
+    filled = pm.fill_abstentions(pm.label_codes(pred), runs)
+    gt_spells = pm.possession_spells(gt_codes, runs)
+    pred_spells = pm.possession_spells(filled, runs)
+    gt_hit = np.zeros(len(gt_spells), dtype=bool)
+    pred_hit = np.zeros(len(pred_spells), dtype=bool)
+    for iou, i, j in pm.spell_overlaps(gt_spells, pred_spells):
+        if iou < pm.SPELL_IOU_HEADLINE:
+            break
+        if not gt_hit[i] and not pred_hit[j]:
+            gt_hit[i] = pred_hit[j] = True
+    over = np.zeros(len(gt_spells), dtype=int)       # 0 same team, 1 other team, 2 dead / none
+    for i, (a, b, code) in enumerate(gt_spells):
+        same = np.mean(filled[a:b] == code)
+        other = np.mean(np.isin(filled[a:b], [k for k in pm.POSSESSION_LABELS if k != code]))
+        over[i] = 0 if same >= max(other, 1 - same - other) else (
+            1 if other >= 1 - same - other else 2)
+    return gt_spells, pred_spells, gt_hit, pred_hit, over, tracking.get("fps", config.FPS)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--labeler", default="v4", choices=sorted(labelers.LABELERS))
+    parser.add_argument("--games", nargs="+", type=int, default=list(bench.DEV_TUNING))
+    parser.add_argument("--levels", nargs="+", default=list(degrade.TRACKER_LEVELS))
+    args = parser.parse_args(argv)
+    config.seed_everything()
+    counts = {level: np.zeros((len(BINS), 7)) for level in list(args.levels) + ["all"]}
+    for _, game in bench.available(args.games):
+        for level in args.levels:
+            gt_spells, pred_spells, gt_hit, pred_hit, over, fps = spells(
+                game, args.labeler, degrade.LIVE_MISSING, level)
+            for which, (group, hit) in enumerate(((gt_spells, gt_hit), (pred_spells, pred_hit))):
+                seconds = np.array([(b - a) / float(fps) for a, b, _ in group])
+                for k, (low, high, _) in enumerate(BINS):
+                    inside = (seconds >= low) & (seconds < high)
+                    for key in (level, "all"):
+                        counts[key][k, 2 * which] += inside.sum()
+                        counts[key][k, 2 * which + 1] += hit[inside].sum()
+                        if which == 0:
+                            for reason in range(3):
+                                counts[key][k, 4 + reason] += (
+                                    inside & ~hit & (over == reason)).sum()
+    for key, c in counts.items():
+        print("\n{} at IoU {}, level {}".format(args.labeler, pm.SPELL_IOU_HEADLINE, key))
+        print("{:<8}{:>10}{:>9}{:>9}{:>11}{:>9}{:>11}   {}".format(
+            "length", "reference", "found", "recall", "predicted", "real", "precision",
+            "missed: same team / other team / dead"))
+        for (_, _, label), row in zip(BINS + ((0, 0, "all"),), list(c) + [c.sum(axis=0)]):
+            print("{:<8}{:>10.0f}{:>9.0f}{:>9.3f}{:>11.0f}{:>9.0f}{:>11.3f}   {:.0f} / {:.0f} / {:.0f}"
+                  .format(label, row[0], row[1], row[1] / max(row[0], 1), row[2], row[3],
+                          row[3] / max(row[2], 1), row[4], row[5], row[6]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

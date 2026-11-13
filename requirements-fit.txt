@@ -1,0 +1,10 @@
+# Only for fitting the optional boosted evidence models (tools/fit_evidence.py --model boosted,
+# tools/evidence_diag.py). Not needed to build the submission: the fitted trees are exported as
+# plain numbers and evaluated with NumPy.
+-r requirements.txt
+cloudpickle==3.1.2
+joblib==1.6.0
+narwhals==2.28.0
+scikit-learn==1.9.1
+scipy==1.18.1
+threadpoolctl==3.8.0

@@ -51,6 +51,11 @@ NEAR_CLIP = 10.0            # m; distance differences are clipped to +/- this
 BALL_SPEED_CLIP = 30.0      # m/s
 BALL_VX_CLIP = 20.0         # m/s
 OUT_CLIP = 10.0             # m
+K_NEAREST = 3               # players per team in the player-level team model
+DIST_CLIP = 30.0            # m; player-to-ball distances are clipped to this
+SINCE_CLIP = 250            # frames (10 s); "since / until a team had the ball" is clipped to this
+CARRY_REACHES = (1.5, 3.0)  # m; nearest player this close to the tracked ball = at their feet
+OFFSETS = (-50, -25, -12, 12, 25, 50)   # frames; earlier / later copies of the nearest distances
 CONTEXT = (25, 75)          # frames each side for the smoothed copies of each clue (1 s, 3 s)
 
 # --------------------------------------------------------------------------- clue extraction
@@ -119,6 +124,40 @@ def _nearest(players, point, team_of_slot):
     return out[0], out[2], out[1], out[3]
 
 
+def _nearest_k(players, point, team_of_slot, k=None):
+    """(home, away): (n, k) distances from `point` to each team's k nearest tracked players,
+    nearest first; NaN where fewer are tracked or the point is unknown."""
+    k = k or K_NEAREST
+    diff = players - point[:, None, :]
+    dist = np.hypot(diff[..., 0], diff[..., 1])
+    dist = np.where(np.isnan(dist), np.inf, dist)
+    out = []
+    for team in (HOME, AWAY):
+        d = np.sort(dist[:, team_of_slot == team], axis=1)[:, :k]
+        if d.shape[1] < k:
+            d = np.hstack([d, np.full((len(d), k - d.shape[1]), np.inf)])
+        out.append(np.where(np.isfinite(d), d, np.nan))
+    return out[0], out[1]
+
+
+def _since(mask, clip=None):
+    """Frames since `mask` was last True (0 where it is), clipped; the clip where never yet."""
+    clip = clip or SINCE_CLIP
+    index = np.maximum.accumulate(np.where(mask, np.arange(len(mask)), -1))
+    since = np.arange(len(mask)) - index
+    return np.where(index < 0, clip, np.minimum(since, clip)).astype(float)
+
+
+def _shift(x, k, fill):
+    """x[t + k] at frame t; `fill` where that is outside the match or unknown."""
+    out = np.full(len(x), float(fill))
+    if k >= 0:
+        out[:len(x) - k] = x[k:]
+    else:
+        out[-k:] = x[:k]
+    return np.where(np.isfinite(out), out, fill)
+
+
 def _diff(away, home, clip=NEAR_CLIP):
     """away - home, clipped, NaN where either is unknown (inf)."""
     with np.errstate(invalid="ignore"):
@@ -161,7 +200,19 @@ def clues(tracking):
     home_x = _nanmean_rows(players[:, team_of_slot == HOME, 0]) * attack[:, HOME]
     away_x = _nanmean_rows(players[:, team_of_slot == AWAY, 0]) * attack[:, AWAY]
 
+    dk_home, dk_away = _nearest_k(players, last, team_of_slot)
+    carried = {}
+    for reach in CARRY_REACHES:        # a player of the team has the (tracked) ball at their feet
+        carried[reach] = (_since(present & (d_home <= reach)), _since(present & (d_away <= reach)),
+                          _since((present & (d_home <= reach))[::-1])[::-1],
+                          _since((present & (d_away <= reach))[::-1])[::-1])
+
     return {
+        "dk_home": dk_home,                            # m, the K_NEAREST nearest home players to
+        "dk_away": dk_away,                            # the last-seen ball, nearest first; NaN
+        "carried": carried,                            # reach -> frames since / until, per team
+        # last-seen ball along the pitch, > 0: in the half home attacks
+        "ball_x": (last[:, 0] - length / 2.0) * attack[:, HOME],
         "half_blocks": half_blocks,
         "present": present,
         "ball_speed": base["ball_speed"],              # m/s, NaN unseen
@@ -253,6 +304,45 @@ def team_design(c):
     return names, np.stack([x for _, x in columns], axis=1)
 
 
+def player_design(c):
+    """(names, matrix) for the player-level home-vs-away model (boosted trees only).
+
+    The team clues of team_design, plus what each team's nearest players are doing around the
+    ball now and up to 2 s earlier and later, and how long ago / how soon each team has the ball
+    at a player's feet. Column names say how a column behaves when the teams swap (player_swap):
+    "s_" flips sign, "h_" / "a_" trade places, anything else stays.
+    """
+    names, x = team_design(c)
+    columns = [("s_" + n, x[:, i]) for i, n in enumerate(names)]
+    columns.append(("s_ball_x", _fill(c["ball_x"])))
+    for k in OFFSETS:
+        columns.append(("s_near_last@{}".format(k), _shift(c["near_last"], k, 0.0)))
+    columns.append(("ball_speed", _fill(np.clip(c["ball_speed"], 0, BALL_SPEED_CLIP))))
+    columns.append(("gap_since", np.minimum(c["gap_since"], SINCE_CLIP).astype(float)))
+    for side, key, col in (("h_", "dk_home", 0), ("a_", "dk_away", 1)):
+        d = np.clip(c[key], 0.0, DIST_CLIP)
+        for i in range(d.shape[1]):
+            columns.append(("{}d{}".format(side, i + 1), _fill(d[:, i], DIST_CLIP)))
+        for k in OFFSETS:
+            columns.append(("{}d1@{}".format(side, k), _shift(d[:, 0], k, DIST_CLIP)))
+        for reach in CARRY_REACHES:
+            since = c["carried"][reach]
+            columns.append(("{}since{}".format(side, reach), since[col]))
+            columns.append(("{}until{}".format(side, reach), since[2 + col]))
+    return [n for n, _ in columns], np.stack([v for _, v in columns], axis=1)
+
+
+def player_swap(names):
+    """(perm, sign): x[:, perm] * sign is the same frames with the two teams swapped."""
+    index = {n: i for i, n in enumerate(names)}
+    perm, sign = [], []
+    for n in names:
+        other = "a_" + n[2:] if n.startswith("h_") else "h_" + n[2:] if n.startswith("a_") else n
+        perm.append(index[other])
+        sign.append(-1.0 if n.startswith("s_") else 1.0)
+    return perm, sign
+
+
 # --------------------------------------------------------------------------- logistic models
 
 def fit_logistic(x, y, intercept, ridge=1.0, iterations=50):
@@ -294,6 +384,63 @@ def apply_logistic(x, bias, weights):
     return bias + np.asarray(x, dtype=float) @ np.asarray(weights, dtype=float)
 
 
+def _tree_arrays(model):
+    """The exported trees as padded arrays (feature, threshold, left, right, value), cached."""
+    key = id(model["trees"])
+    if key not in _TREE_CACHE:
+        trees = model["trees"]
+        width = max(len(t["value"]) for t in trees)
+
+        def pad(field, dtype):
+            out = np.zeros((len(trees), width), dtype=dtype)
+            for i, t in enumerate(trees):
+                out[i, :len(t[field])] = t[field]
+            return out
+        _TREE_CACHE[key] = (model["trees"], pad("feature", np.intp), pad("threshold", float),
+                            pad("left", np.intp), pad("right", np.intp), pad("value", float),
+                            max(t["depth"] for t in trees))
+    return _TREE_CACHE[key][1:]
+
+
+_TREE_CACHE = {}
+
+
+def _sum_trees(x, model):
+    feature, threshold, left, right, value, depth = _tree_arrays(model)
+    rows = np.arange(len(x))
+    total = np.full(len(x), float(model["bias"]))
+    for t in range(len(feature)):
+        node = np.zeros(len(x), dtype=np.intp)
+        for _ in range(depth):          # a leaf has left = right = itself, so it stays put
+            go_left = x[rows, feature[t][node]] <= threshold[t][node]
+            node = np.where(go_left, left[t][node], right[t][node])
+        total += value[t][node]
+    return total
+
+
+def apply_trees(x, model):
+    """Log-odds from a boosted-tree model exported by tools/fit_evidence.py --model boosted:
+    bias plus one leaf value per tree (a row goes left when its clue <= the node's threshold).
+    Plain NumPy, so the build needs no scikit-learn. A "symmetric" model (the team model, whose
+    clues are all home-minus-away) is evaluated as (f(x) - f(-x)) / 2: swapping the teams flips
+    the sign exactly."""
+    x = np.ascontiguousarray(x, dtype=float)
+    if "swap" in model:
+        perm, sign = model["swap"]
+        mirrored = np.ascontiguousarray(x[:, np.asarray(perm)] * np.asarray(sign, dtype=float))
+        return 0.5 * (_sum_trees(x, model) - _sum_trees(mirrored, model))
+    if model.get("symmetric"):
+        return 0.5 * (_sum_trees(x, model) - _sum_trees(-x, model))
+    return _sum_trees(x, model)
+
+
+def apply_model(x, model):
+    """Log-odds per row from a fitted model dict: boosted trees if it has them, else logistic."""
+    if "trees" in model:
+        return apply_trees(x, model)
+    return apply_logistic(x, model["bias"], model["weights"])
+
+
 def _fitted():
     """Models written by tools/fit_evidence.py (fitted on the external tuning games only)."""
     try:
@@ -312,14 +459,14 @@ def log_odds(c, dead_model=None, team_model=None):
         raise RuntimeError("evidence models not fitted: run tools/fit_evidence.py")
     names, x = motion_design(c)
     _check(names, dead_model["motion"])
-    dead = apply_logistic(x, dead_model["motion"]["bias"], dead_model["motion"]["weights"])
+    dead = apply_model(x, dead_model["motion"])
     names, x = ball_design(c)
     _check(names, dead_model["ball"])
     seen = c["present"]
-    dead[seen] = apply_logistic(x[seen], dead_model["ball"]["bias"], dead_model["ball"]["weights"])
-    names, x = team_design(c)
+    dead[seen] = apply_model(x[seen], dead_model["ball"])
+    names, x = (player_design if team_model.get("design") == "players" else team_design)(c)
     _check(names, team_model)
-    team = apply_logistic(x, team_model["bias"], team_model["weights"])
+    team = apply_model(x, team_model)
     return dead, team
 
 
