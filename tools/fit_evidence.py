@@ -70,7 +70,9 @@ def stack(games, design, which):
 BOOST_STEP = 5
 BOOST = dict(max_depth=3, max_iter=200, learning_rate=0.1, l2_regularization=1.0,
              min_samples_leaf=200, early_stopping=False, random_state=0)
-KINDS = ("logistic", "boosted")
+# Player-level team model (architecture review): more clues, so deeper and more trees.
+BOOST_PLAYERS = dict(BOOST, max_depth=5, max_iter=300)
+KINDS = ("logistic", "boosted", "players")
 
 
 def export_trees(model):
@@ -91,17 +93,25 @@ def export_trees(model):
     return round(float(np.ravel(model._baseline_prediction)[0]), 10), trees
 
 
-def fit_boosted(names, x, y, symmetric):
+def fit_boosted(names, x, y, symmetric, swap=None, settings=None):
     from sklearn.ensemble import HistGradientBoostingClassifier
     x, y = x[::BOOST_STEP], y[::BOOST_STEP]
-    if symmetric:     # team clues are home-minus-away: add the mirrored match, no home bias
+    if swap is not None:   # the same frames with the teams swapped: no home bias
+        perm, sign = swap
+        x, y = np.vstack([x, x[:, np.asarray(perm)] * np.asarray(sign)]), np.concatenate([y, ~y])
+    elif symmetric:     # team clues are home-minus-away: add the mirrored match, no home bias
         x, y = np.vstack([x, -x]), np.concatenate([y, ~y])
-    bias, trees = export_trees(HistGradientBoostingClassifier(**BOOST).fit(x, y))
-    return {"names": list(names), "bias": bias, "symmetric": bool(symmetric), "trees": trees}
+    bias, trees = export_trees(HistGradientBoostingClassifier(**(settings or BOOST)).fit(x, y))
+    model = {"names": list(names), "bias": bias, "symmetric": bool(symmetric), "trees": trees}
+    if swap is not None:
+        model.update(design="players", swap=[list(swap[0]), list(swap[1])])
+    return model
 
 
 def fit(games, design, which, intercept, kind="logistic"):
     names, x, y = stack(games, design, which)
+    if kind == "players":
+        return fit_boosted(names, x, y, True, evidence.player_swap(names), BOOST_PLAYERS), len(y)
     if kind == "boosted":
         return fit_boosted(names, x, y, symmetric=not intercept), len(y)
     return as_dict(names, *evidence.fit_logistic(x, y, intercept=intercept, ridge=RIDGE)), len(y)
@@ -130,9 +140,11 @@ def as_dict(names, bias, weights):
 def fit_models(games, kind="logistic"):
     """(dead_model, team_model, (n_motion, n_ball, n_team)) fitted on rows() of some games.
     Shared with tools/logo.py, which fits on one game at a time."""
-    motion, n_motion = fit(games, evidence.motion_design, "all", True, kind)
-    ball, n_ball = fit(games, evidence.ball_design, "seen", True, kind)
-    team_model, n_team = fit(games, evidence.team_design, "live", False, kind)
+    dead_kind = "boosted" if kind == "players" else kind
+    motion, n_motion = fit(games, evidence.motion_design, "all", True, dead_kind)
+    ball, n_ball = fit(games, evidence.ball_design, "seen", True, dead_kind)
+    design = evidence.player_design if kind == "players" else evidence.team_design
+    team_model, n_team = fit(games, design, "live", False, kind)
     return {"motion": motion, "ball": ball}, team_model, (n_motion, n_ball, n_team)
 
 

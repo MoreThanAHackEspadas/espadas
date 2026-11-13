@@ -136,3 +136,51 @@ def test_boosted_export_matches_sklearn_and_is_symmetric():
         fit_evidence.BOOST_STEP = old_step
     assert team["symmetric"] and len(team["trees"]) == fit_evidence.BOOST["max_iter"]
     assert np.array_equal(evidence.apply_model(q, team), -evidence.apply_model(-q, team))
+
+
+def test_player_design_swaps_with_the_teams():
+    tracking = _match()
+    tracking["ball"] = tracking["ball"].copy()
+    tracking["ball"][120:150] = np.nan                 # a ball gap: last-seen clues take over
+    names, x = evidence.player_design(evidence.clues(tracking))
+    swapped = dict(tracking, team_of_slot=1 - tracking["team_of_slot"])
+    names2, x2 = evidence.player_design(evidence.clues(swapped))
+    perm, sign = evidence.player_swap(names)
+    assert names == names2 and len(set(names)) == len(names)
+    assert np.isfinite(x).all()
+    assert np.allclose(x2, x[:, perm] * np.asarray(sign))
+    assert sorted(perm) == list(range(len(names)))
+
+
+def test_since_and_shift():
+    mask = np.array([0, 1, 0, 0, 1, 0], dtype=bool)
+    assert list(evidence._since(mask, clip=2)) == [2, 0, 1, 2, 0, 1]
+    x = np.array([1.0, 2.0, np.nan, 4.0])
+    assert list(evidence._shift(x, 1, 9.0)) == [2.0, 9.0, 4.0, 9.0]
+    assert list(evidence._shift(x, -1, 9.0)) == [9.0, 1.0, 2.0, 9.0]
+
+
+def test_player_model_is_antisymmetric_under_a_team_swap():
+    pytest.importorskip("sklearn")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+    import fit_evidence
+
+    names = ["s_a", "h_d", "a_d", "speed"]
+    swap = evidence.player_swap(names)
+    assert swap == ([0, 2, 1, 3], [-1.0, 1.0, 1.0, 1.0])
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(6000, 4))
+    y = (x[:, 0] + x[:, 2] - x[:, 1] + rng.normal(scale=0.3, size=6000)) > 0
+    old_step, fit_evidence.BOOST_STEP = fit_evidence.BOOST_STEP, 1
+    try:
+        model = fit_evidence.fit_boosted(names, x, y, True, swap,
+                                         dict(fit_evidence.BOOST, max_iter=20,
+                                              min_samples_leaf=20))
+    finally:
+        fit_evidence.BOOST_STEP = old_step
+    assert model["design"] == "players"
+    q = rng.normal(size=(500, 4))
+    mirrored = q[:, swap[0]] * np.asarray(swap[1])
+    z = evidence.apply_model(q, model)
+    assert np.array_equal(z, -evidence.apply_model(mirrored, model))
+    assert np.mean((z > 0) == ((q[:, 0] + q[:, 2] - q[:, 1]) > 0)) > 0.9
