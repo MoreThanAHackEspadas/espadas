@@ -68,14 +68,14 @@ def forward(w, p, mask, g):
     """(n, 2) raw outputs (dead, change) for one run of frames; g already scaled."""
     n = len(p)
     hidden = w["p2.bias"].shape[0]
-    enc = np.empty((n, 4 * hidden), dtype=np.float32)
+    enc = np.empty((n, 4 * hidden))
     for a in range(0, n, neural.CHUNK):
         b = min(n, a + neural.CHUNK)
-        q, m = p[a:b], mask[a:b][..., None]
+        q, m = p[a:b].astype(np.float64), mask[a:b][..., None]
         speed = np.sqrt(q[..., 0] ** 2 + q[..., 1] ** 2 + 1e-6)[..., None]
         h = neural._relu(np.concatenate([q, speed], axis=-1) @ w["p1.weight"].T + w["p1.bias"])
         h = neural._relu(h @ w["p2.weight"].T + w["p2.bias"]) * m
-        count = np.maximum(m.sum(axis=2), 1).astype(np.float32)
+        count = np.maximum(m.sum(axis=2), 1).astype(np.float64)
         enc[a:b] = np.concatenate([h.max(axis=2), h.sum(axis=2) / count], axis=-1).reshape(b - a, -1)
     return neural.trunk(w, np.concatenate([enc, g], axis=1))
 
@@ -83,7 +83,7 @@ def forward(w, p, mask, g):
 def apply(ws, inp):
     """Dead log-odds per frame (0 outside the halves): the mean over the nets and over the
     frames plain / team-swapped x plain / pitch-mirrored. Rounded once, at the end."""
-    ws = [ws] if isinstance(ws, dict) else list(ws)
+    ws = [neural._double(w) for w in ([ws] if isinstance(ws, dict) else list(ws))]   # 64-bit
     names = list(inp["names"])
     out = np.zeros(len(inp["globals"]))
     for w in ws:
@@ -92,7 +92,7 @@ def apply(ws, inp):
                                "tools/fit_blind.py")
         for _, first, last in inp["half_blocks"]:
             s = slice(first, last + 1)
-            g = inp["globals"][s] * w["gscale"]
+            g = inp["globals"][s].astype(np.float64) * w["gscale"]
             for swap in (False, True):
                 p, m = inp["players"][s], inp["mask"][s]
                 if swap:

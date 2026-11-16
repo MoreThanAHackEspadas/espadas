@@ -284,7 +284,7 @@ def check_numpy(net, w, view, frames=3000):
     with torch.no_grad():
         want = net(torch.from_numpy(p)[None], torch.from_numpy(m)[None],
                    torch.from_numpy(g)[None])[0].numpy()
-    got = neural.forward(w, p, m, g)
+    got = neural.forward(neural._double(w), p, m, g)
     worst = float(np.abs(want - got).max())
     if worst > 1e-3:
         raise RuntimeError("NumPy and PyTorch disagree by {:.5f}".format(worst))

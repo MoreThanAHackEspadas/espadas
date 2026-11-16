@@ -88,6 +88,16 @@ written and pushed before its one held-out comparison:
    evidence from a network that did not see it), which removes the gap between training and
    left-out scores. Result: 0.685 against 0.616 for step 3 and 0.552 for the 11 Nov file, ahead
    on all five matches, 0.695 / 0.676 at 15% / 35% hidden.
+5. *16 Nov, ten matches and a ball-blind stoppage network* (`docs/neural_result.md`, last
+   sections; `experiments/neural_v2/`). The network of step 4 is trained on all ten external
+   matches (the five held-out ones were already spent as tests on 10 and 11 Nov), with short
+   possessions weighted up in its loss. A second, small network decides dead or live from the
+   players alone (velocities and pitch positions, no ball input of any kind) and replaces the
+   motion-only tree model on frames without a ball. Scored on all ten matches in five folds of
+   two, each match by networks that did not see it, decoder settings of step 4 unchanged: 0.724,
+   against 0.702 for step 4's network trained the same way. The gain from the ball-blind network
+   is on the Metrica matches (0.637 to 0.679), where the ball is rarely tracked during
+   stoppages, as on our match.
 
 ### Sequence model (`v4`, Phase 7)
 
@@ -370,7 +380,7 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 
 The output is deterministic: two clean builds give byte-identical files
 (`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the
-README, is `40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65` on this branch
+README, is `3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0` on this branch
 (`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e` for the 13 Nov tree models). The first run
 parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.

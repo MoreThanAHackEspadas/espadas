@@ -52,16 +52,20 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 python -m espadas.run                   # -> out/espadas.csv (labeler v4), validated, prints its SHA-256
 ```
 
-**Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off,
-neural team evidence and settings fitted on the five-match pool on 16 Nov; results in
-`docs/neural_result.md`; deterministic on one machine, see the note on other machines there):
+**Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off; team
+evidence from a network and stoppages without a ball from a second, ball-blind network, both
+fitted on all ten external matches on 16 Nov; results in `docs/neural_result.md`; deterministic
+on one machine, see the note on other machines there):
 
 ```
-40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65
+3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0
 ```
 
-This branch is not the agreed submission: the named candidate is the player-level tree model of
-13 Nov (PR #6, SHA-256 `fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`).
+This branch is not the agreed submission until the team confirms it on PR #7. The candidate
+named under `docs/refinement2_rule.md` is the player-level tree model of 13 Nov (PR #6, SHA-256
+`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`). The first build of this
+branch (one network on the five-match pool, before the ten-match models) had SHA-256
+`40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65`.
 The file frozen on 11 Nov (`main@53861c0`, logistic evidence models, `docs/idsse_comparison.md`)
 has SHA-256 `7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb`.
 
@@ -101,6 +105,8 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games (3 Nov, on the earlier bench; not re-tuned on the final one) |
 | `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) plus player-level team clues (each team's three nearest players to the ball, the nearest distance up to 2 s earlier and later, time since / until a player has the ball at their feet), combined into a dead log-odds and a home log-odds per frame by boosted trees evaluated in NumPy; models fitted by `tools/fit_evidence.py --model players` on external games, stored in `evidence_models.py` |
 | `espadas/neural.py` | Neural team evidence (16 Nov): a player encoder pooled per team and dilated temporal convolutions (about 10 s each side) give the home log-odds per frame, replacing the tree model for home-or-away; dead log-odds stay with the trees. NumPy only; weights in `neural_weights.py`, fitted by `tools/fit_neural.py` (PyTorch) on external games |
+| `espadas/blind.py` | Ball-blind dead evidence (16 Nov): dead-or-live from player velocities, pitch positions and the player-motion clues only, never the ball, so it cannot learn "no ball = stoppage". Used on frames without a ball; the tree model stays on frames with one. NumPy only; weights in `blind_weights.py` |
+| `experiments/neural_v2/` | The ten-match experiments and `final.py`, which fitted and exported the shipped networks (PyTorch, external matches only) |
 | `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
 | `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close) and carrier touches (a change of who has the ball at their feet, no kink needed; 6.7b), merging the two, team, control confirmation (pass chain or hold), touch pulses for the decoder; `v3` uses kink touches, `v4` both |
 | `espadas/v3.py` | `v3`: `v2` + touch pulses; settings tuned by `tools/tune.py --labeler v3` |
