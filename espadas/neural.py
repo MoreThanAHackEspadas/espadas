@@ -35,7 +35,7 @@ OWN_GLOBALS = ("g_present", "g_gap_since", "g_gap_until", "g_ball_speed", "s_g_b
                "y_g_ball_vy", "s_g_ref_x", "y_g_ref_y", "g_out", "g_kink2", "g_kink6")
 GAP_CLIP = 250             # frames
 ROUND = 3                  # decimals kept of the log-odds (steadier across machines)
-CHUNK = 16384              # frames per block in the player encoder (memory only)
+CHUNK = 8192               # frames per block in the player encoder (memory only)
 
 
 def _sign(names, prefix):
@@ -160,13 +160,13 @@ def _encode(w, p, mask):
     """(n, 2 * (2 + TOP) * hidden): per team the max, the mean and the TOP nearest players."""
     n = len(p)
     hidden = w["p2.bias"].shape[0]
-    out = np.empty((n, 2 * (2 + TOP) * hidden), dtype=np.float32)
+    out = np.empty((n, 2 * (2 + TOP) * hidden))
     for a in range(0, n, CHUNK):
         b = min(n, a + CHUNK)
         m = mask[a:b][..., None]
-        h = _relu(p[a:b] @ w["p1.weight"].T + w["p1.bias"])
+        h = _relu(p[a:b].astype(np.float64) @ w["p1.weight"].T + w["p1.bias"])
         h = _relu(h @ w["p2.weight"].T + w["p2.bias"]) * m
-        count = np.maximum(m.sum(axis=2), 1).astype(np.float32)
+        count = np.maximum(m.sum(axis=2), 1).astype(np.float64)
         team = np.concatenate([h.max(axis=2), h.sum(axis=2) / count,
                                h[:, :, :TOP].reshape(b - a, 2, TOP * hidden)], axis=-1)
         out[a:b] = team.reshape(b - a, -1)
@@ -176,7 +176,7 @@ def _encode(w, p, mask):
 def forward(w, p, mask, g):
     """(n, 3) raw outputs (dead, home, change) for one unbroken run of frames (a half).
     g must already be scaled (g * w["gscale"])."""
-    x = np.concatenate([_encode(w, p, mask), g], axis=1)
+    x = np.concatenate([_encode(w, p, mask), np.asarray(g, dtype=np.float64)], axis=1)
     x = _relu(x @ w["frame.weight"].T + w["frame.bias"])
     for i, d in enumerate(dilations(w)):
         y = _norm(x, w["norms.%d.weight" % i], w["norms.%d.bias" % i])
@@ -186,12 +186,21 @@ def forward(w, p, mask, g):
     return x @ w["out.weight"].T + w["out.bias"]
 
 
+def _double(w):
+    """The weights as 64-bit floats. The fitted weights are 32-bit, but the arithmetic is done
+    in 64-bit: rounding differences between machines are then about 1e-13, far below the ROUND
+    step, so the rounded log-odds (and the file built from them) do not depend on the CPU or
+    the maths library."""
+    return {k: (np.asarray(v, dtype=np.float64) if isinstance(v, np.ndarray) else v)
+            for k, v in w.items()}
+
+
 def dilations(w):
     return [int(d) for d in w["dilations"]]
 
 
 def swap_inputs(p, mask, g, perm, sign):
-    return p[:, ::-1] * PLAYER_SWAP_SIGN, mask[:, ::-1], g[:, perm] * sign
+    return p[:, ::-1] * PLAYER_SWAP_SIGN, mask[:, ::-1], g[:, perm] * sign.astype(g.dtype)
 
 
 def apply(w, inp):
@@ -200,13 +209,14 @@ def apply(w, inp):
     if names != list(w["names"]):
         raise RuntimeError("neural model was fitted on different inputs; re-run "
                            "tools/fit_neural.py")
+    w = _double(w)
     perm, sign = global_swap(names)
     n = len(inp["globals"])
     dead, team = np.zeros(n), np.zeros(n)
     for _, first, last in inp["half_blocks"]:
         s = slice(first, last + 1)
         p, mask = inp["players"][s], inp["mask"][s]
-        g = inp["globals"][s] * w["gscale"]
+        g = inp["globals"][s].astype(np.float64) * w["gscale"]
         a = forward(w, p, mask, g)
         b = forward(w, *swap_inputs(p, mask, g, perm, sign))
         dead[s] = (a[:, 0] + b[:, 0]) / 2.0

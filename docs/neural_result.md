@@ -94,10 +94,42 @@ out-of-sample evidence (`tools/logo_neural.py --final`): 0.6888. Settings that m
 `kink_threshold` 1 → 3, `chain_gap` 25 → 100, `hold_reach` 1.5 → 1.0.
 
 Built once on our match, as a validity check only (no number from our match chose anything):
-valid, deterministic, SHA-256
+valid, deterministic, SHA-256 (unchanged by the later switch to 64-bit arithmetic)
 `40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65`; 324 possessions (275 per
 90 min), mean 11.5 s, home share 60%; H 56,483, A 36,900, D 65,474, X 40,462. PR #6 gives 302
 possessions (257), 12.4 s, 61%.
+
+## The three models side by side
+
+By data provider, leave-one-game-out spellF1 (mean of that provider's matches):
+
+| Provider | Frozen (11 Nov) | Player-level trees (PR #6) | Network (this branch) |
+|---|---|---|---|
+| Metrica (2 matches) | 0.5484 | 0.5887 | 0.6373 |
+| DFL / Sportec IDSSE (3 matches) | 0.5548 | 0.6343 | 0.7162 |
+
+On our match there are no labels to score against, so the three outputs can only be compared
+with each other. Aggregates only; none of this chose anything, and none of it says which
+output is right.
+
+| Output | H | A | D | Possessions | Per 90 min | Mean length | Under 2 s | 2–5 s | Over 15 s |
+|---|---|---|---|---|---|---|---|---|---|
+| Frozen | 35.0% | 21.6% | 43.4% | 311 | 264 | 11.6 s | 31 | 82 | 78 |
+| PR #6 | 36.1% | 23.1% | 40.8% | 302 | 257 | 12.4 s | 25 | 92 | 82 |
+| Network | 35.6% | 23.2% | 41.2% | 324 | 275 | 11.5 s | 44 | 96 | 87 |
+
+| Pair | Same label | Same dead / live call | Same team where both live | Similarity as spellF1 |
+|---|---|---|---|---|
+| Frozen and PR #6 | 90.5% | 95.0% | 91.9% | 0.626 |
+| Frozen and network | 88.2% | 95.3% | 87.2% | 0.532 |
+| PR #6 and network | 92.9% | 98.1% | 90.9% | 0.697 |
+
+Shares are of the 158,857 graded frames. "Similarity as spellF1" scores one output against the
+other as if it were the reference. The network and PR #6 share the same kind of dead models, so
+their stoppages agree on 98% of frames; where both call the ball live they disagree on the team
+on 9% of frames, and the network finds more short possessions. The reference matches have 269
+and 382 possessions per 90 min (Metrica 1 and 3), so all three outputs are in or just below that
+range.
 
 ## Weaknesses
 
@@ -110,10 +142,11 @@ possessions (257), 12.4 s, 61%.
   than the trees do, and our match's tracker is not one it was trained on. The gain over PR #6
   is +0.05 on both Metrica matches and +0.05 to +0.10 on the IDSSE ones.
 - **Cross-machine determinism.** Two builds on one machine are byte-identical. The network is
-  floating-point matrix arithmetic, and a different CPU or BLAS library could round differently;
-  the log-odds are rounded to 3 decimals to make that unlikely, but unlike the trees it is not
-  guaranteed. A fresh-clone rebuild on a second machine should confirm the hash before this is
-  submitted.
+  floating-point matrix arithmetic, where another CPU or maths library can round differently.
+  The forward pass therefore runs in 64-bit (differences of about 1e-13) and the log-odds are
+  rounded to 3 decimals, which makes a different file on another machine very unlikely, but
+  unlike the trees it is not guaranteed by construction. A fresh-clone rebuild on a second
+  machine should confirm the hash before this is submitted; it has not been done.
 - **Training is not bit-reproducible.** GPU training with a fixed seed gives slightly different
   weights each time. The submitted weights are the ones in the repository; re-running
   `fit_neural.py export` would give a different file and hash.
