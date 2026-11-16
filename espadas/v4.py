@@ -104,18 +104,23 @@ START = np.array([0.0, NEG, 0.0, NEG, 0.0])   # a half starts in control or dead
 # Leave-one-game-out 0.6160 vs 0.5522 for the frozen method, ahead on 5 of 5 (15% / 35% hidden:
 # 0.6264 / 0.6050 vs 0.5655 / 0.5397). In-sample 0.70 is not a score: the new model fits its
 # training matches closely (train-test gap +0.089).
+# 16 Nov (branch `new-arch`): team evidence from the network of neural.py (dead evidence still
+# the boosted trees); settings re-tuned on the five-match pool with out-of-sample evidence (each
+# match's evidence from a network that did not see it, tools/logo_neural.py --final): 0.6888.
+# Leave-one-game-out 0.6846 vs 0.6160 for the player-level trees and 0.5522 for the frozen
+# method, ahead on 5 of 5 (15% / 35% hidden: 0.6946 / 0.6756).
 PARAMS = {
-    "dead_smooth": 6,
-    "dead_bias": -1.0,        # log-odds, frames with a ball only
-    "w_dead": 4.0,
-    "team_cap": 2.0,
+    "dead_smooth": 0,
+    "dead_bias": -0.5,        # log-odds, frames with a ball only
+    "w_dead": 16.0,
+    "team_cap": 5.0,
     "w_team": 4.0,
-    "loose_scale": 1.0,
+    "loose_scale": 0.0,
     "w_confirm": 0.0,
     "w_touch": 0.0,
-    "w_touch_own": 20.0,      # credit to the toucher's own states for a lone touch
+    "w_touch_own": 10.0,      # credit to the toucher's own states for a lone touch
     "w_ctrl": 0.0,
-    "w_loose": 0.0,
+    "w_loose": 1.0,
     "ctrl_reach": 5.0,       # m
     "loose_reach": 5.0,      # m
     "c_loose": 20.0,
@@ -124,11 +129,11 @@ PARAMS = {
     "c_restart": 160.0,
     "min_dead": 75,          # frames; shorter decoded dead spells go to the team around them
     "min_alive": 25,          # frames; shorter live spells between two stoppages become dead
-    "kink_half": 10,
-    "kink_threshold": 1.0,
+    "kink_half": 6,
+    "kink_threshold": 3.0,
     "touch_reach": 4.0,
-    "chain_gap": 25,
-    "hold_reach": 1.5,
+    "chain_gap": 100,
+    "hold_reach": 1.0,
     "hold_frames": 12,
     "touch_mode": "both",    # 6.7: kink touches + carrier touches (touches.carrier)
     "carrier_reach": 2.5,    # m; nearest player this close = the ball's carrier

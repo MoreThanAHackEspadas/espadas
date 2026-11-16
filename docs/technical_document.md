@@ -78,6 +78,16 @@ written and pushed before its one held-out comparison:
    0.552 (+0.064), ahead on all five matches (+0.038 to +0.105), and 0.626 / 0.605 against
    0.566 / 0.540 at 15% / 35% hidden. The decoder is the same model, re-tuned on the new
    evidence.
+4. *16 Nov, neural team evidence* (`docs/neural_result.md`; done after the 14 Nov cut-off of
+   the rule, so adopted only if the team agrees). The tree model for home-or-away is replaced by
+   one network (`espadas/neural.py`): a small encoder applied to every player and pooled per
+   team, then dilated temporal convolutions looking about 10 s each side. It is trained with
+   PyTorch on the same five matches and evaluated with NumPy from weights stored as text. The
+   dead evidence stays with the tree models, because the network can read whether the ball is
+   tracked. In leave-one-match-out the decoder is tuned on out-of-sample evidence (each match's
+   evidence from a network that did not see it), which removes the gap between training and
+   left-out scores. Result: 0.685 against 0.616 for step 3 and 0.552 for the 11 Nov file, ahead
+   on all five matches, 0.695 / 0.676 at 15% / 35% hidden.
 
 ### Sequence model (`v4`, Phase 7)
 
@@ -360,7 +370,8 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 
 The output is deterministic: two clean builds give byte-identical files
 (`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the
-README, is `fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`. The first run
+README, is `40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65` on this branch
+(`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e` for the 13 Nov tree models). The first run
 parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.
 `python third_party/mtah2027/validate_submission.py out/espadas.csv` runs the organisers' own

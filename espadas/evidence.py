@@ -208,6 +208,7 @@ def clues(tracking):
                           _since((present & (d_away <= reach))[::-1])[::-1])
 
     return {
+        "tracking": tracking,                          # for the neural model (neural.inputs)
         "dk_home": dk_home,                            # m, the K_NEAREST nearest home players to
         "dk_away": dk_away,                            # the last-seen ball, nearest first; NaN
         "carried": carried,                            # reach -> frames since / until, per team
@@ -464,6 +465,9 @@ def log_odds(c, dead_model=None, team_model=None):
     _check(names, dead_model["ball"])
     seen = c["present"]
     dead[seen] = apply_model(x[seen], dead_model["ball"])
+    if team_model.get("design") == "neural":      # the network of neural.py reads the tracking
+        from . import neural
+        return dead, neural.team_log_odds(c, team_model, c["tracking"])
     names, x = (player_design if team_model.get("design") == "players" else team_design)(c)
     _check(names, team_model)
     team = apply_model(x, team_model)

@@ -53,14 +53,15 @@ python -m espadas.run                   # -> out/espadas.csv (labeler v4), valid
 ```
 
 **Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off,
-player-level boosted evidence models and settings fitted on the five-match pool on 13 Nov; met
-the leave-one-match-out rule in `docs/refinement2_rule.md`, results in
-`docs/refinement2_result.md`; deterministic):
+neural team evidence and settings fitted on the five-match pool on 16 Nov; results in
+`docs/neural_result.md`; deterministic on one machine, see the note on other machines there):
 
 ```
-fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e
+40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65
 ```
 
+This branch is not the agreed submission: the named candidate is the player-level tree model of
+13 Nov (PR #6, SHA-256 `fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`).
 The file frozen on 11 Nov (`main@53861c0`, logistic evidence models, `docs/idsse_comparison.md`)
 has SHA-256 `7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb`.
 
@@ -99,6 +100,7 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games (3 Nov, on the earlier bench; not re-tuned on the final one) |
 | `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) plus player-level team clues (each team's three nearest players to the ball, the nearest distance up to 2 s earlier and later, time since / until a player has the ball at their feet), combined into a dead log-odds and a home log-odds per frame by boosted trees evaluated in NumPy; models fitted by `tools/fit_evidence.py --model players` on external games, stored in `evidence_models.py` |
+| `espadas/neural.py` | Neural team evidence (16 Nov): a player encoder pooled per team and dilated temporal convolutions (about 10 s each side) give the home log-odds per frame, replacing the tree model for home-or-away; dead log-odds stay with the trees. NumPy only; weights in `neural_weights.py`, fitted by `tools/fit_neural.py` (PyTorch) on external games |
 | `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
 | `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close) and carrier touches (a change of who has the ball at their feet, no kink needed; 6.7b), merging the two, team, control confirmation (pass chain or hold), touch pulses for the decoder; `v3` uses kink touches, `v4` both |
 | `espadas/v3.py` | `v3`: `v2` + touch pulses; settings tuned by `tools/tune.py --labeler v3` |
@@ -137,9 +139,13 @@ python tools/fetch_metrica.py                      # download, pinned to one com
 python tools/fetch_idsse.py                        # IDSSE, figshare v1, MD5-checked (~2.6 GB)
 python tools/scoreboard.py --games 1 3 12 13 15   # labelers x tuning pool x tracker levels
 python -m espadas.external.bench --labeler v4 --games 12  # one game, one tracker level
-pip install -r requirements-fit.txt                # scikit-learn, for fitting only (the build needs NumPy only)
-python tools/fit_evidence.py --model players       # refit the evidence models on the pool (writes evidence_models.py)
-#   ^ rewrites the tracked espadas/evidence_models.py: never run it after the freeze
+pip install -r requirements-fit.txt                # scikit-learn and PyTorch, for fitting only (the build needs NumPy only)
+python tools/fit_neural.py prep                    # cache the training views (~15 GB, outside the repo)
+python tools/fit_neural.py export                  # refit the network and the dead models (writes neural_weights.py, evidence_models.py)
+#   ^ rewrites tracked files and is not bit-reproducible: never run it after the freeze
+python tools/logo_neural.py --workers 14           # cross-fitted leave-one-match-out for the network
+python tools/logo_neural.py --final --workers 14   # decoder settings on out-of-sample evidence (prints PARAMS)
+python tools/fit_evidence.py --model players       # the 13 Nov tree models instead (writes evidence_models.py)
 python tools/tune.py --labeler v4 --workers 6      # re-tune the 5-state model on the pool (prints PARAMS)
 python tools/logo.py --labeler v4 --evidence players --workers 6   # leave-one-match-out check of fitting + tuning
 python tools/ceiling_diag.py --workers 6           # where spellF1 is lost: oracle ceilings per part
