@@ -1,6 +1,7 @@
 # Team Espadas: technical document (MTAH 2027, Phase 1)
 
-> Draft. Exported to `espadas.pdf` for submission (SUBMISSION.md, deliverable 3).
+> Submitted version (`main`, 16 Nov 2026). Exported to `espadas.pdf` for submission (SUBMISSION.md,
+> deliverable 3).
 
 ## 1. Approach
 
@@ -11,8 +12,14 @@ measurements of its tracking did inform some design choices; section 3 says whic
 1. **Preprocessing.** Ball positions that jump faster than 40 m/s are dropped, gaps of up to 1 s
    are filled, speeds are computed, and each team's attacking direction is read from the kick-off
    formation of each half.
-2. **Per-frame evidence.** Small boosted-tree models, fitted on the external games (section 3),
-   turn tracking clues into a "ball is dead" score and a "home has it" score for every frame. Dead-ball clues: ball speed and position (when
+2. **Per-frame evidence.** Learned models, fitted on the external games (section 3), turn the
+   tracking into a "ball is dead" score and a "home has it" score for every frame. The home score
+   comes from a small neural network (`espadas/neural.py`: an encoder applied to every player,
+   pooled per team, then temporal convolutions looking about 10 s each side). The dead score
+   comes from small boosted-tree models on frames where the ball is tracked, and from a second
+   small network that never sees the ball (`espadas/blind.py`: player velocities and positions
+   only) on frames where it is not. Both networks run in NumPy, in 64-bit, from weights stored in
+   the repository. The clues behind them are listed below. Dead-ball clues: ball speed and position (when
    it is tracked), and how the players move (mean speed, share running, fastest player), which is
    what tells a live ball gap from a stoppage when the ball is missing. Team clues at team level,
    written as home-minus-away: nearest player to the ball and to where it was
@@ -35,17 +42,17 @@ measurements of its tracking did inform some design choices; section 3 says whic
    file is validated with the organisers' own checks and its SHA-256 is printed.
 
 **Why this, rather than something else.** We have no labels on the provided game and may not
-make any, the tuning data is a handful of external matches from other trackers (five matches in
-the final tuning pool, section 3), and the file must be reproducible. That ruled out a large
+make any, the tuning data is a handful of external matches from other trackers (ten matches from two
+providers, section 3), and the file must be reproducible. That ruled out a large
 learned model: with so few games it would memorise the tuning trackers rather than learn
-possession. Instead each stage is small and
+possession, so the learned parts are kept small. Each stage is small and
 checkable on its own (a clue is right or wrong on an external game), the parts of the official
 definition that are structural (a loose ball keeps its team, possession changes only through a
 loose ball, a restart is taken in control) are built into the model rather than learned, and
 the decoder has only a few dozen tuned weights and costs, on an external bench made deliberately
-harder than the tuning games. The evidence models are the one learned part: shallow boosted
-trees, kept only because they scored higher on matches they had never seen (leave-one-match-out,
-below). We kept a plain rule-based variant (`v1`: dead-ball rules plus a hysteresis
+harder than the tuning games. The evidence models are the one learned part: two small networks
+and shallow boosted trees, each kept only because it scored higher on matches its models had
+never seen (leave-one-match-out, below). We kept a plain rule-based variant (`v1`: dead-ball rules plus a hysteresis
 switch on the nearest player) as a candidate throughout; it is simpler but collapses on
 realistic tracker noise (with its settings from the earlier, easier bench; section 5), which is
 why the sequence model was built. We did not build our own ball detector on the video: the
@@ -79,7 +86,7 @@ written and pushed before its one held-out comparison:
    0.566 / 0.540 at 15% / 35% hidden. The decoder is the same model, re-tuned on the new
    evidence.
 4. *16 Nov, neural team evidence* (`docs/neural_result.md`; done after the 14 Nov cut-off of
-   the rule, so adopted only if the team agrees). The tree model for home-or-away is replaced by
+   the rule; the team adopted it by merging PR #7 on 16 Nov, together with step 5). The tree model for home-or-away is replaced by
    one network (`espadas/neural.py`): a small encoder applied to every player and pooled per
    team, then dilated temporal convolutions looking about 10 s each side. It is trained with
    PyTorch on the same five matches and evaluated with NumPy from weights stored as text. The
@@ -372,8 +379,8 @@ team-mate and a restart are kept. This turns 389–477 possessions per 90 minute
 - **Not used:** the video (no detector of our own), Smart Tagging and the tracked-object count
   (section 2).
 - **With more time:** an own ball detector on the tactical video, trained on external data, to
-  shrink the missing-ball problem at its source; tuning on all ten external matches and on more
-  open datasets (more varied data was the largest gain we found); a better team attribution for
+  shrink the missing-ball problem at its source; re-tuning the decoder on all ten external matches and
+  adding more open datasets (more varied data was the largest gain we found); a better team attribution for
   carrier touches.
 
 ## 6. How to reproduce
@@ -393,7 +400,8 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 The output is deterministic: two clean builds give byte-identical files
 (`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the
 README, is `3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0`
-(`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e` for the 13 Nov tree models). The first run
+(`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e` for the 13 Nov tree models).
+A fresh build on a second machine (a teammate's laptop, 16 Nov) gave the same hash. The first run
 parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.
 `python third_party/mtah2027/validate_submission.py out/espadas.csv` runs the organisers' own

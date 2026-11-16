@@ -151,8 +151,8 @@ range.
   floating-point matrix arithmetic, where another CPU or maths library can round differently.
   The forward pass therefore runs in 64-bit (differences of about 1e-13) and the log-odds are
   rounded to 3 decimals, which makes a different file on another machine very unlikely, but
-  unlike the trees it is not guaranteed by construction. A fresh-clone rebuild on a second
-  machine should confirm the hash before this is submitted; it has not been done.
+  unlike the trees it is not guaranteed by construction. Confirmed for the shipped build on 16 Nov:
+  a second machine (a teammate's laptop) built the same SHA-256 from `main@8f39ca8`.
 - **Training is not bit-reproducible.** GPU training with a fixed seed gives slightly different
   weights each time. The submitted weights are the ones in the repository; re-running
   `fit_neural.py export` would give a different file and hash.
@@ -219,4 +219,4 @@ What to keep in mind, besides the weaknesses above:
 - **The ball-blind network depends on player tracking only.** Our match has track slots that
   swap identities, which the external matches do not have; it reads velocities over about half
   a second, so a swap shows up as a short burst of false speed.
-- **A second-machine rebuild has not been done.**
+- **Second-machine rebuild: done 16 Nov, same SHA-256** (a teammate's laptop, `main@8f39ca8`).

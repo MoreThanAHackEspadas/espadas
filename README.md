@@ -54,8 +54,8 @@ python -m espadas.run                   # -> out/espadas.csv (labeler v4), valid
 
 **Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off; team
 evidence from a network and stoppages without a ball from a second, ball-blind network, both
-fitted on all ten external matches on 16 Nov; results in `docs/neural_result.md`; deterministic
-on one machine, see the note on other machines there):
+fitted on all ten external matches on 16 Nov; results in `docs/neural_result.md`; deterministic,
+and the same hash on two machines):
 
 ```
 3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0
