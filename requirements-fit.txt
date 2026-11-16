@@ -1,6 +1,9 @@
-# Only for fitting the optional boosted evidence models (tools/fit_evidence.py --model boosted,
-# tools/evidence_diag.py). Not needed to build the submission: the fitted trees are exported as
-# plain numbers and evaluated with NumPy.
+# Only for fitting the evidence models: the boosted trees (tools/fit_evidence.py --model boosted,
+# tools/evidence_diag.py; scikit-learn) and the neural team evidence (tools/fit_neural.py,
+# tools/logo_neural.py; PyTorch). Not needed to build the submission: the fitted trees and
+# network weights are exported as plain numbers and evaluated with NumPy.
+# torch was installed from https://download.pytorch.org/whl/cu128 (CUDA 12.8 build); the CPU
+# build of the same version also works, only slower.
 -r requirements.txt
 cloudpickle==3.1.2
 joblib==1.6.0
@@ -8,3 +11,4 @@ narwhals==2.28.0
 scikit-learn==1.9.1
 scipy==1.18.1
 threadpoolctl==3.8.0
+torch==2.11.0

@@ -78,6 +78,26 @@ written and pushed before its one held-out comparison:
    0.552 (+0.064), ahead on all five matches (+0.038 to +0.105), and 0.626 / 0.605 against
    0.566 / 0.540 at 15% / 35% hidden. The decoder is the same model, re-tuned on the new
    evidence.
+4. *16 Nov, neural team evidence* (`docs/neural_result.md`; done after the 14 Nov cut-off of
+   the rule, so adopted only if the team agrees). The tree model for home-or-away is replaced by
+   one network (`espadas/neural.py`): a small encoder applied to every player and pooled per
+   team, then dilated temporal convolutions looking about 10 s each side. It is trained with
+   PyTorch on the same five matches and evaluated with NumPy from weights stored as text. The
+   dead evidence stays with the tree models, because the network can read whether the ball is
+   tracked. In leave-one-match-out the decoder is tuned on out-of-sample evidence (each match's
+   evidence from a network that did not see it), which removes the gap between training and
+   left-out scores. Result: 0.685 against 0.616 for step 3 and 0.552 for the 11 Nov file, ahead
+   on all five matches, 0.695 / 0.676 at 15% / 35% hidden.
+5. *16 Nov, ten matches and a ball-blind stoppage network* (`docs/neural_result.md`, last
+   sections; `experiments/neural_v2/`). The network of step 4 is trained on all ten external
+   matches (the five held-out ones were already spent as tests on 10 and 11 Nov), with short
+   possessions weighted up in its loss. A second, small network decides dead or live from the
+   players alone (velocities and pitch positions, no ball input of any kind) and replaces the
+   motion-only tree model on frames without a ball. Scored on all ten matches in five folds of
+   two, each match by networks that did not see it, decoder settings of step 4 unchanged: 0.724,
+   against 0.702 for step 4's network trained the same way. The gain from the ball-blind network
+   is on the Metrica matches (0.637 to 0.679), where the ball is rarely tracked during
+   stoppages, as on our match.
 
 ### Sequence model (`v4`, Phase 7)
 
@@ -196,9 +216,16 @@ inform design choices, and we list them:
 **Split.** Fixed before any score was taken on the games concerned.
 - *Tuning pool (everything with a number in it is fitted or tuned here):* Metrica Games 1 and 3
   and IDSSE matches 12, 13 and 15 (Bochum v Leverkusen, Düsseldorf v Regensburg, Düsseldorf v
-  Nürnberg). The per-frame evidence models (`tools/fit_evidence.py --model players`,
-  written to `evidence_models.py` as constants) and `v4`'s settings (`tools/tune.py`) were
-  fitted on this pool on 13 Nov (first on 11 Nov, with logistic models; section 1). Building the submission therefore needs no external data at all.
+  Nürnberg). `v4`'s settings were tuned on this pool (16 Nov, `tools/logo_neural.py --final`,
+  with the first neural model of section 1, step 4; they were not re-tuned for the shipped
+  models). The evidence models were fitted on this pool on 11 and 13 Nov and for the first
+  neural model on 16 Nov.
+- *Shipped evidence models (16 Nov, section 1, step 5):* the team network, the ball-blind dead
+  network and the tree dead models are fitted on **all ten external matches**, the pool above
+  plus the five held-out ones below, which had already been spent as tests
+  (`experiments/neural_v2/final.py`; `docs/refinement2_rule.md` allows the full pool). They are
+  stored as constants (`neural_weights.py`, `blind_weights.py`, `evidence_models.py`), so
+  building the submission needs no external data at all. No external match is left untouched.
 - *Held out:* Metrica Game 2, scored on the current bench exactly once, by the 10 Nov selection
   (`tools/selection.py`); and IDSSE matches 11, 14, 16 and 17, scored exactly once, by the 11 Nov
   comparison (`tools/idsse_compare.py`), each time after its decision rule was pushed and with
@@ -315,9 +342,14 @@ team-mate and a restart are kept. This turns 389–477 possessions per 90 minute
   are probably merged into their neighbours; on the held-out DFL/Sportec matches the 11 Nov
   models predicted 71–82% of the reference count. `v1` and `v3` were compared on 10 Nov with their own, older
   tuning, not re-tuned on the final pool, so that comparison is of the candidates as they stood.
-- **Little tuning data.** Five tuning matches and five held-out ones, from two providers. Scores on
-  the tuning matches overstate scores on unseen ones, and more so since 13 Nov: the boosted
-  models fit their training matches closely (leave-one-match-out: about 0.70 in-sample against
+- **Little data, and none left untouched.** Ten external matches from two providers. Five were
+  held out and scored once each (10 and 11 Nov); since 16 Nov all ten are training data for the
+  shipped networks, so those networks have no held-out score: every figure quoted for them
+  comes from fold networks trained on eight matches and scored on the two left out, with
+  decoder settings that were tuned on five of the ten. The variants compared on 16 Nov were
+  chosen on those same matches. Scores on
+  the training matches overstate scores on unseen ones: the boosted
+  models of 13 Nov fit their training matches closely (leave-one-match-out: about 0.70 in-sample against
   0.62 on the match left out; 0.02 apart with the logistic models). Only the left-out figures
   are quoted as results. With only two Metrica games re-tuning did not carry over at all. Who
   has the ball is the bottleneck, not stoppages: with the 11 Nov models on the tuning pool,
@@ -360,7 +392,8 @@ python -m espadas.run                      # -> out/espadas.csv, validated, SHA-
 
 The output is deterministic: two clean builds give byte-identical files
 (`python tools/check_determinism.py`); the expected SHA-256 of the submitted file, also in the
-README, is `fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`. The first run
+README, is `3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0`
+(`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e` for the 13 Nov tree models). The first run
 parses the tracking (a couple of minutes) and caches
 arrays under `cache/`; the cache never changes the output.
 `python third_party/mtah2027/validate_submission.py out/espadas.csv` runs the organisers' own

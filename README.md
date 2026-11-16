@@ -52,15 +52,21 @@ The bundle ships videos as `BAR-ATH_tactical-002.mp4` / `BAR-ATH_broadcast-001.m
 python -m espadas.run                   # -> out/espadas.csv (labeler v4), validated, prints its SHA-256
 ```
 
-**Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off,
-player-level boosted evidence models and settings fitted on the five-match pool on 13 Nov; met
-the leave-one-match-out rule in `docs/refinement2_rule.md`, results in
-`docs/refinement2_result.md`; deterministic):
+**Expected SHA-256 of `out/espadas.csv` built from this branch** (labeler `v4`, `X` off; team
+evidence from a network and stoppages without a ball from a second, ball-blind network, both
+fitted on all ten external matches on 16 Nov; results in `docs/neural_result.md`; deterministic
+on one machine, see the note on other machines there):
 
 ```
-fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e
+3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0
 ```
 
+Earlier builds, for reference. The player-level tree models of 13 Nov (PR #6, the candidate
+named under `docs/refinement2_rule.md`): SHA-256
+`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`. The first neural build (one
+network on the five-match pool, PR #7 before the ten-match models): SHA-256
+`40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65`. The neural models were made
+after that rule's 14 Nov cut-off; merging PR #7 is the team's decision to submit them instead.
 The file frozen on 11 Nov (`main@53861c0`, logistic evidence models, `docs/idsse_comparison.md`)
 has SHA-256 `7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb`.
 
@@ -99,6 +105,9 @@ python -m espadas.run --labeler v0 --raw --out out/raw.csv && \
 | `espadas/labelers.py` | per-frame labelers; `v0` reproduces the organisers' baseline |
 | `espadas/v1.py` | `v1`: dead-ball detection + hysteresis on the nearest player; settings tuned by `tools/tune_v1.py` on external games (3 Nov, on the earlier bench; not re-tuned on the final one) |
 | `espadas/evidence.py` | Phase 5 clues (ball, player motion, nearest player, ball direction, convergence, team shape) plus player-level team clues (each team's three nearest players to the ball, the nearest distance up to 2 s earlier and later, time since / until a player has the ball at their feet), combined into a dead log-odds and a home log-odds per frame by boosted trees evaluated in NumPy; models fitted by `tools/fit_evidence.py --model players` on external games, stored in `evidence_models.py` |
+| `espadas/neural.py` | Neural team evidence (16 Nov): a player encoder pooled per team and dilated temporal convolutions (about 10 s each side) give the home log-odds per frame, replacing the tree model for home-or-away; dead log-odds stay with the trees. NumPy only; weights in `neural_weights.py`, fitted by `tools/fit_neural.py` (PyTorch) on external games |
+| `espadas/blind.py` | Ball-blind dead evidence (16 Nov): dead-or-live from player velocities, pitch positions and the player-motion clues only, never the ball, so it cannot learn "no ball = stoppage". Used on frames without a ball; the tree model stays on frames with one. NumPy only; weights in `blind_weights.py` |
+| `experiments/neural_v2/` | The ten-match experiments and `final.py`, which fitted and exported the shipped networks (PyTorch, external matches only) |
 | `espadas/v2.py` | `v2`: the Phase 5 evidence + v1's dead-ball clean-up + CUSUM switching; settings tuned by `tools/tune.py --labeler v2` |
 | `espadas/touches.py` | Phase 6: touch detection (ball velocity kink with a player close) and carrier touches (a change of who has the ball at their feet, no kink needed; 6.7b), merging the two, team, control confirmation (pass chain or hold), touch pulses for the decoder; `v3` uses kink touches, `v4` both |
 | `espadas/v3.py` | `v3`: `v2` + touch pulses; settings tuned by `tools/tune.py --labeler v3` |
@@ -122,8 +131,8 @@ the ground truth or the provided video. External data lives outside this repo un
 
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
-| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning pool (Games 1, 3) and held-out selection (Game 2, 10 Nov) |
-| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Tuning pool (matches 12, 13, 15) and held-out comparison (11, 14, 16, 17, 11 Nov); split in `espadas/external/__init__.py` |
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning pool (Games 1, 3) and held-out selection (Game 2, 10 Nov). Since 16 Nov all three are training data for the shipped networks and tree dead models (Game 2 was already spent as a test); the decoder settings were tuned on Games 1 and 3 only |
+| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Tuning pool (matches 12, 13, 15) and held-out comparison (11, 14, 16, 17, 11 Nov); split in `espadas/external/__init__.py`. Since 16 Nov all seven are training data for the shipped networks and tree dead models (the held-out four were already spent as tests); the decoder settings were tuned on 12, 13, 15 only |
 
 Reference labels on external games are derived **by code** from each game's event data
 (`espadas/external/events.py`, rules documented there); on the IDSSE matches from the
@@ -137,9 +146,13 @@ python tools/fetch_metrica.py                      # download, pinned to one com
 python tools/fetch_idsse.py                        # IDSSE, figshare v1, MD5-checked (~2.6 GB)
 python tools/scoreboard.py --games 1 3 12 13 15   # labelers x tuning pool x tracker levels
 python -m espadas.external.bench --labeler v4 --games 12  # one game, one tracker level
-pip install -r requirements-fit.txt                # scikit-learn, for fitting only (the build needs NumPy only)
-python tools/fit_evidence.py --model players       # refit the evidence models on the pool (writes evidence_models.py)
-#   ^ rewrites the tracked espadas/evidence_models.py: never run it after the freeze
+pip install -r requirements-fit.txt                # scikit-learn and PyTorch, for fitting only (the build needs NumPy only)
+python tools/fit_neural.py prep                    # cache the training views (~15 GB, outside the repo)
+python tools/fit_neural.py export                  # refit the network and the dead models (writes neural_weights.py, evidence_models.py)
+#   ^ rewrites tracked files and is not bit-reproducible: never run it after the freeze
+python tools/logo_neural.py --workers 14           # cross-fitted leave-one-match-out for the network
+python tools/logo_neural.py --final --workers 14   # decoder settings on out-of-sample evidence (prints PARAMS)
+python tools/fit_evidence.py --model players       # the 13 Nov tree models instead (writes evidence_models.py)
 python tools/tune.py --labeler v4 --workers 6      # re-tune the 5-state model on the pool (prints PARAMS)
 python tools/logo.py --labeler v4 --evidence players --workers 6   # leave-one-match-out check of fitting + tuning
 python tools/ceiling_diag.py --workers 6           # where spellF1 is lost: oracle ceilings per part
@@ -152,7 +165,9 @@ python tools/idsse_compare.py --dry-run            # 11 Nov one-shot comparison 
 readers and `bench.available()` unless the caller opts in (`heldout=True`), before any file is
 opened. Only a real run of `tools/selection.py` (Game 2) or `tools/idsse_compare.py` (IDSSE)
 does that, once each; both have been run and refuse a second run. The other tools work on the
-tuning pool and touch a held-out game only with an explicit `--heldout`.
+tuning pool and touch a held-out game only with an explicit `--heldout`, or, for the
+16 Nov networks, through `experiments/neural_v2/` and `tools/fit_neural.py`, which read all ten
+matches on purpose (the full pool of `docs/refinement2_rule.md`).
 
 The external games lose the ball almost only during stoppages (the IDSSE ball is never lost),
 while ours also loses it in live play. So the bench hides ball bursts in live play (default 25% of live frames; see
