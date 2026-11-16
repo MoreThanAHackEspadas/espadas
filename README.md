@@ -138,7 +138,9 @@ Reference labels on external games are derived **by code** from each game's even
 (`espadas/external/events.py`, rules documented there); on the IDSSE matches from the
 provider's per-frame ball status and possession flags plus a fixed 1 s touch rule
 (`espadas/external/idsse.py`). No hand labels are used. The **tuning pool** (`bench.DEV_TUNING`)
-is Metrica 1, 3 and IDSSE 12, 13, 15: the evidence models and `v4`'s settings are fitted there.
+is Metrica 1, 3 and IDSSE 12, 13, 15: `v4`'s decoder settings are tuned there. The shipped
+evidence models (the networks and the tree dead models) are fitted on all ten matches, as the
+table above says.
 
 ```bash
 export MTAH_EXTERNAL_DIR="<workdir>/external_data"
