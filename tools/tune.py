@@ -116,11 +116,20 @@ def main(argv=None):
                             " ".join(map(str, bench.DEV_TUNING))))
     parser.add_argument("--workers", type=int, default=1,
                         help="processes scoring the views in parallel (same result)")
+    parser.add_argument("--pool", choices=sorted(bench.POOLS), default=None,
+                        help="named pool instead of --games: dev (the default games) or full "
+                             "(all ten external matches, incl. the spent held-out ones; "
+                             "docs/refinement2_rule.md)")
     args = parser.parse_args(argv)
     module = importlib.import_module("espadas." + args.labeler)
     config.seed_everything()
+    spent = False
+    if args.pool:
+        args.games, spent = bench.pool(args.pool)
+    print("tuning games: {}".format(" ".join(map(str, args.games))))
 
-    tuning = [g for blur in OBJECTIVE_BLURS for g in prepare(module, args.games, blur=blur)]
+    tuning = [g for blur in OBJECTIVE_BLURS
+              for g in prepare(module, args.games, blur=blur, heldout=spent)]
     with parallel(module, tuning, args.workers):
         best, params = descend(module, tuning, module.PARAMS)
         _, per_game = objective(module, tuning, params)
@@ -131,7 +140,8 @@ def main(argv=None):
             name, OBJECTIVE_BLURS[i // n_games], s))
     checks = [(h, b) for h in ROBUSTNESS for b in OBJECTIVE_BLURS]
     for hide in ROBUSTNESS:
-        score = np.mean([objective(module, prepare(module, args.games, hide, b), params)[0]
+        score = np.mean([objective(module, prepare(module, args.games, hide, b, heldout=spent),
+                                   params)[0]
                          for b in OBJECTIVE_BLURS])
         print("  tune @ {:.0%} live missing, all blurs: mean spellF1 {:.4f}".format(hide, score))
     if args.skip_heldout or not args.heldout:

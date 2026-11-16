@@ -63,7 +63,9 @@ def test_flicker_ignored_and_sustained_switch_dated_back():
     f = _f(team=1.0)
     f["team_lo"][100:110] = -1.0                     # 10 frames of away evidence: a blip
     f["team_lo"][250:] = -1.0                        # away from 250 on
-    labels = v4.decode(f, dict(QUIET, c_turnover=20.0))
+    # The settings this arithmetic assumes are pinned, so a re-tune cannot change the test.
+    labels = v4.decode(f, dict(QUIET, c_turnover=20.0, w_team=2.0, team_cap=5.0,
+                               loose_scale=0.0, c_loose=2.0, min_dead=50, min_alive=25))
     # The switch goes through one loose frame (250, still home's: a loose ball belongs to the
     # last team in control), so away has it from 251, one frame after its evidence starts.
     assert set(labels[:251]) == {"H"}

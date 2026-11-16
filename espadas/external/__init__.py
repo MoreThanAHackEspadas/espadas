@@ -24,6 +24,18 @@ ALL_HELD_OUT = HELD_OUT + IDSSE_HELD_OUT
 # logo.py and scoreboard.py default to it). The submitted evidence models and v4 settings were
 # fitted on it on 11 Nov.
 DEV_TUNING = TUNING + IDSSE_TUNING
+# Refinement 2 (docs/refinement2_rule.md): the held-out games have each had their one comparison
+# (Game 2 on 10 Nov, IDSSE 11/14/16/17 on 11 Nov), so they may now be fitted and tuned on, but
+# only through an explicit `--pool full`: the guard above still refuses them by default.
+SPENT_HELD_OUT = HELD_OUT + IDSSE_HELD_OUT
+FULL_TUNING = tuple(sorted(DEV_TUNING + SPENT_HELD_OUT))
+POOLS = {"dev": DEV_TUNING, "full": FULL_TUNING}
+
+
+def pool(name):
+    """(game numbers, heldout opt-in) for a named pool: 'dev' (the default) or 'full'."""
+    games = POOLS[name]
+    return games, bool(set(games) & set(ALL_HELD_OUT))
 
 
 class HeldOutError(RuntimeError):

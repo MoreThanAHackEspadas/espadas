@@ -64,8 +64,56 @@ def stack(games, design, which):
     return names, np.vstack(xs), np.concatenate(ys)
 
 
-def fit(games, design, which, intercept):
+# Boosted alternative (refinement 2, step 3): small, shallow, strongly regularised, fixed seed.
+# Fitted on every BOOST_STEP-th frame (neighbouring frames are near copies). scikit-learn is
+# needed for this fit only; the trees are exported as plain numbers (evidence.apply_trees).
+BOOST_STEP = 5
+BOOST = dict(max_depth=3, max_iter=200, learning_rate=0.1, l2_regularization=1.0,
+             min_samples_leaf=200, early_stopping=False, random_state=0)
+# Player-level team model (architecture review): more clues, so deeper and more trees.
+BOOST_PLAYERS = dict(BOOST, max_depth=5, max_iter=300)
+KINDS = ("logistic", "boosted", "players")
+
+
+def export_trees(model):
+    """A fitted HistGradientBoostingClassifier as (bias, [tree dicts]) of plain numbers."""
+    trees = []
+    for (predictor,) in model._predictors:
+        nodes = predictor.nodes
+        leaf = nodes["is_leaf"].astype(bool)
+        own = np.arange(len(nodes))
+        trees.append({
+            "feature": [int(v) for v in np.where(leaf, 0, nodes["feature_idx"])],
+            "threshold": [float(v) for v in np.where(leaf, 0.0, nodes["num_threshold"])],
+            "left": [int(v) for v in np.where(leaf, own, nodes["left"])],
+            "right": [int(v) for v in np.where(leaf, own, nodes["right"])],
+            "value": [round(float(v), 10) for v in np.where(leaf, nodes["value"], 0.0)],
+            "depth": int(nodes["depth"].max()),
+        })
+    return round(float(np.ravel(model._baseline_prediction)[0]), 10), trees
+
+
+def fit_boosted(names, x, y, symmetric, swap=None, settings=None):
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    x, y = x[::BOOST_STEP], y[::BOOST_STEP]
+    if swap is not None:   # the same frames with the teams swapped: no home bias
+        perm, sign = swap
+        x, y = np.vstack([x, x[:, np.asarray(perm)] * np.asarray(sign)]), np.concatenate([y, ~y])
+    elif symmetric:     # team clues are home-minus-away: add the mirrored match, no home bias
+        x, y = np.vstack([x, -x]), np.concatenate([y, ~y])
+    bias, trees = export_trees(HistGradientBoostingClassifier(**(settings or BOOST)).fit(x, y))
+    model = {"names": list(names), "bias": bias, "symmetric": bool(symmetric), "trees": trees}
+    if swap is not None:
+        model.update(design="players", swap=[list(swap[0]), list(swap[1])])
+    return model
+
+
+def fit(games, design, which, intercept, kind="logistic"):
     names, x, y = stack(games, design, which)
+    if kind == "players":
+        return fit_boosted(names, x, y, True, evidence.player_swap(names), BOOST_PLAYERS), len(y)
+    if kind == "boosted":
+        return fit_boosted(names, x, y, symmetric=not intercept), len(y)
     return as_dict(names, *evidence.fit_logistic(x, y, intercept=intercept, ridge=RIDGE)), len(y)
 
 
@@ -89,12 +137,14 @@ def as_dict(names, bias, weights):
             "weights": [round(float(w), 10) for w in weights]}
 
 
-def fit_models(games):
+def fit_models(games, kind="logistic"):
     """(dead_model, team_model, (n_motion, n_ball, n_team)) fitted on rows() of some games.
     Shared with tools/logo.py, which fits on one game at a time."""
-    motion, n_motion = fit(games, evidence.motion_design, "all", True)
-    ball, n_ball = fit(games, evidence.ball_design, "seen", True)
-    team_model, n_team = fit(games, evidence.team_design, "live", False)
+    dead_kind = "boosted" if kind == "players" else kind
+    motion, n_motion = fit(games, evidence.motion_design, "all", True, dead_kind)
+    ball, n_ball = fit(games, evidence.ball_design, "seen", True, dead_kind)
+    design = evidence.player_design if kind == "players" else evidence.team_design
+    team_model, n_team = fit(games, design, "live", False, kind)
     return {"motion": motion, "ball": ball}, team_model, (n_motion, n_ball, n_team)
 
 
@@ -110,16 +160,30 @@ def main(argv=None):
     parser.add_argument("--games", nargs="+", type=int, default=list(bench.DEV_TUNING),
                         help="games to fit on (default: the development pool {})".format(
                             " ".join(map(str, bench.DEV_TUNING))))
+    parser.add_argument("--pool", choices=sorted(bench.POOLS), default=None,
+                        help="named pool instead of --games: dev (the default games) or full "
+                             "(all ten external matches, incl. the spent held-out ones; "
+                             "docs/refinement2_rule.md)")
+    parser.add_argument("--model", choices=KINDS, default="logistic",
+                        help="logistic (default) or boosted trees (needs scikit-learn to fit, "
+                             "not to build)")
     args = parser.parse_args(argv)
     config.seed_everything()
-    tuning = rows(args.games)
-    dead_model, team_model, (n_motion, n_ball, n_team) = fit_models(tuning)
+    spent = False
+    if args.pool:
+        args.games, spent = bench.pool(args.pool)
+    tuning = rows(args.games, heldout=spent)
+    dead_model, team_model, (n_motion, n_ball, n_team) = fit_models(tuning, args.model)
     motion, ball = dead_model["motion"], dead_model["ball"]
 
     for title, model, n in (("dead, no ball (motion only)", motion, n_motion),
                             ("dead, ball tracked", ball, n_ball),
                             ("team (home +)", team_model, n_team)):
         print("{} model, {} frames, bias {:+.3f}".format(title, n, model["bias"]))
+        if "trees" in model:
+            print("    {} boosted trees over {} clues".format(len(model["trees"]),
+                                                          len(model["names"])))
+            continue
         for name, w in zip(model["names"], model["weights"]):
             print("    {:<18}{:+.4f}".format(name, w))
     print()
@@ -131,8 +195,8 @@ def main(argv=None):
     with open(OUT, "w") as f:
         f.write('"""Generated by tools/fit_evidence.py; do not edit by hand.\n\n'
                 "Fitted on external games {} only (light/medium/heavy/smooth tracker levels: "
-                "ball blur + player error, ball hidden on {:.0%} of live frames).\n"
-                '"""\n\n'.format(" ".join(map(str, args.games)), HIDE_BALL))
+                "ball blur + player error, ball hidden on {:.0%} of live frames). Model: {}.\n"
+                '"""\n\n'.format(" ".join(map(str, args.games)), HIDE_BALL, args.model))
         f.write("DEAD_MODEL = {!r}\n\nTEAM_MODEL = {!r}\n".format(dead_model, team_model))
     print("\nwrote", os.path.relpath(OUT, ROOT))
     return 0
