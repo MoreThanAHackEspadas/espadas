@@ -3,6 +3,7 @@
     python dexp.py ceilings VARIANT --folds g5 [--dead tree|net|blind|split|avg] [--blind NAME]
     python dexp.py score    VARIANT --folds g5 --dead split --blind NAME [--change] [--w-change X]
     python dexp.py cvtune   VARIANT --folds g5 --dead split --blind NAME [--change] [--keys dead|all]
+    python dexp.py finaltune VARIANT --folds g5 --dead split --blind NAME [--change] [--keys dead|all]
 
 Evidence per game comes from networks that did not see it (nexp.py fit / blind.py fit).
 `--games 1 2` replaces the fold list by leave-one-out folds over those games (smoke tests).
@@ -108,7 +109,7 @@ def save(a, result):
     os.makedirs(OUT, exist_ok=True)
     name = "dexp_{}_{}_{}_{}{}{}".format(a.command, a.variant, a.folds, a.dead,
                                         "_change" if a.change else "",
-                                        "_" + a.keys if a.command == "cvtune" else "")
+                                        "_" + a.keys if a.command in ("cvtune", "finaltune") else "")
     path = os.path.join(OUT, name + ".json")
     with open(path, "w") as fh:
         json.dump(result, fh, indent=1, default=float)
@@ -185,9 +186,28 @@ def cmd_cvtune(a, mod, rows_by_game):
             "start": {"per_game": start_pg, "mean": ss}, "keys": a.keys, "sweeps": a.sweeps}
 
 
+def cmd_finaltune(a, mod, rows_by_game):
+    """One coordinate descent on the rows of all the games (each game's evidence comes from
+    networks that did not see it), from the decoder module's PARAMS: the settings to ship."""
+    tune.MAX_SWEEPS = a.sweeps
+    grid = mod.GRID if a.keys == "all" else {k: mod.GRID[k] for k in DEAD_KEYS + (["w_change"] if a.change else [])}
+    tmod = types.SimpleNamespace(GRID=grid, decode=mod.decode, PARAMS=mod.PARAMS)
+    start = dict(mod.PARAMS)
+    t0 = time.time()
+    ids, rows = flat(rows_by_game)
+    with tune.parallel(tmod, rows, a.workers):
+        start_score = tune.objective(tmod, rows, start)[0]
+        tuned_score, params = tune.descend(tmod, rows, start, log=lambda *x: None)
+    moved = {k: (start[k], params[k]) for k in params if params[k] != start[k]}
+    print("games {} | start {:.4f} | tuned {:.4f} | {:.0f} s\n  moved {}\nPARAMS = {}".format(
+        sorted(rows_by_game), start_score, tuned_score, time.time() - t0, moved, params))
+    return {"start_score": start_score, "tuned_score": tuned_score, "moved": moved,
+            "params": params, "keys": a.keys, "sweeps": a.sweeps}
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", choices=("ceilings", "score", "cvtune"))
+    ap.add_argument("command", choices=("ceilings", "score", "cvtune", "finaltune"))
     ap.add_argument("variant")
     ap.add_argument("--folds", default="g5")
     ap.add_argument("--games", nargs="+", type=int, default=None)
@@ -204,5 +224,6 @@ if __name__ == "__main__":
     tags = {"std": nexp.STD, "h15": nexp.ROB[0.15], "h35": nexp.ROB[0.35]}[a.tags]
     mod = v4c if a.change else v4
     rows_by_game = load_rows(a.variant, a.folds, tags, a.blind, a.dead, a.games)
-    result = {"ceilings": cmd_ceilings, "score": cmd_score, "cvtune": cmd_cvtune}[a.command](a, mod, rows_by_game)
+    result = {"ceilings": cmd_ceilings, "score": cmd_score, "cvtune": cmd_cvtune,
+              "finaltune": cmd_finaltune}[a.command](a, mod, rows_by_game)
     save(a, dict(result, args=vars(a)))
