@@ -56,10 +56,12 @@ def test_swapping_the_teams_flips_home_and_keeps_dead():
     assert np.allclose(p, b["players"], atol=1e-5) and np.array_equal(mask, b["mask"])
     assert np.allclose(g, b["globals"], atol=1e-5)
     w = _weights(a["names"])
-    dead, team = neural.apply(w, a)
-    dead_s, team_s = neural.apply(w, b)
-    assert np.allclose(dead, dead_s, atol=2e-3) and np.allclose(team, -team_s, atol=2e-3)
-    assert np.abs(team).max() > 0
+    for mirror in (False, True):
+        dead, team, change = neural.apply(w, a, mirror)
+        dead_s, team_s, change_s = neural.apply(w, b, mirror)
+        assert np.allclose(dead, dead_s, atol=2e-3) and np.allclose(team, -team_s, atol=2e-3)
+        assert np.allclose(change, change_s, atol=2e-3)
+        assert np.abs(team).max() > 0
 
 
 def test_convolution_matches_a_direct_sum():
@@ -92,3 +94,80 @@ def test_log_odds_takes_home_from_the_network_and_dead_from_the_trees():
     dead, team = evidence.log_odds(c, dead_model, {"design": "neural", "w": w})
     assert np.array_equal(team, neural.apply(w, neural.inputs(tr, c))[1])
     assert np.allclose(dead, 0.5)
+    assert np.array_equal(c["change_lo"], neural.apply(w, neural.inputs(tr, c))[2])
+
+
+def _old_apply(w, inp):
+    """neural.apply as it was before ensembles and mirroring (dead and home only)."""
+    perm, sign = neural.global_swap(list(inp["names"]))
+    n = len(inp["globals"])
+    dead, team = np.zeros(n), np.zeros(n)
+    for _, first, last in inp["half_blocks"]:
+        s = slice(first, last + 1)
+        p, mask = inp["players"][s], inp["mask"][s]
+        g = inp["globals"][s] * w["gscale"]
+        a = neural.forward(w, p, mask, g)
+        b = neural.forward(w, *neural.swap_inputs(p, mask, g, perm, sign))
+        dead[s] = (a[:, 0] + b[:, 0]) / 2.0
+        team[s] = (a[:, 1] - b[:, 1]) / 2.0
+    return np.round(dead, neural.ROUND), np.round(team, neural.ROUND)
+
+
+def mirrored(tr):
+    """The same match seen from the other touchline (y -> width - y)."""
+    out = dict(tr, players=tr["players"].copy(), ball=tr["ball"].copy())
+    out["players"][..., 1] = tr["pitch"][1] - out["players"][..., 1]
+    out["ball"][:, 1] = tr["pitch"][1] - out["ball"][:, 1]
+    return out
+
+
+def test_one_net_without_mirror_is_the_old_formula_exactly():
+    inp = neural.inputs(_match())
+    w = _weights(inp["names"])
+    dead, team, change = neural.apply(w, inp)
+    old_dead, old_team = _old_apply(w, inp)
+    assert np.array_equal(dead, old_dead) and np.array_equal(team, old_team)
+    assert np.abs(change).max() > 0
+    assert all(np.array_equal(x, y) for x, y in zip(neural.apply([w], inp, False),
+                                                     (dead, team, change)))
+
+
+def test_an_ensemble_of_two_copies_is_the_net():
+    inp = neural.inputs(_match())
+    w = _weights(inp["names"])
+    for mirror in (False, True):
+        one, two = neural.apply(w, inp, mirror), neural.apply([w, dict(w)], inp, mirror)
+        assert all(np.array_equal(x, y) for x, y in zip(one, two))
+    other = _weights(inp["names"], seed=5)
+    mean = np.mean([neural.apply(x, inp, True)[1] for x in (w, other)], axis=0)
+    assert np.allclose(neural.apply([w, other], inp, True)[1], mean, atol=2e-3)
+
+
+def test_mirror_averaging_makes_the_outputs_pitch_symmetric():
+    tr = _match()
+    a, b = neural.inputs(tr), neural.inputs(mirrored(tr))
+    w = _weights(a["names"])
+    plain = [neural.apply(w, a)[k] - neural.apply(w, b)[k] for k in range(3)]
+    assert max(np.abs(x).max() for x in plain) > 0.005         # the net alone is not symmetric
+    for got, want in zip(neural.apply(w, b, True), neural.apply(w, a, True)):
+        assert np.allclose(got, want, atol=2e-3)
+
+
+def test_packed_ensembles_and_the_old_single_net_both_load(monkeypatch):
+    import types
+
+    import espadas
+    inp = neural.inputs(_match())
+    w1, w2 = _weights(inp["names"]), _weights(inp["names"], seed=1)
+    packed = eval(repr(neural.pack_many([w1, w2], True)))
+    assert packed["mirror"] is True and len(packed["nets"]) == 2
+    for value, count, mirror in ((packed, 2, True), (neural.pack(w1), 1, False)):
+        fake = types.SimpleNamespace(PACKED=value)
+        monkeypatch.setitem(sys.modules, "espadas.neural_weights", fake)
+        monkeypatch.setattr(espadas, "neural_weights", fake, raising=False)
+        monkeypatch.setattr(neural, "_CACHE", {})
+        ws, flag = neural.weights()
+        assert len(ws) == count and flag is mirror
+        assert np.array_equal(ws[0]["p1.weight"], w1["p1.weight"])
+    assert neural.weights({"w": w1}) == ([w1], False)
+    assert neural.weights({"w": [w1, w2], "mirror": True}) == ([w1, w2], True)

@@ -442,6 +442,9 @@ def apply_model(x, model):
     return apply_logistic(x, model["bias"], model["weights"])
 
 
+BLIND_MODES = ("split", "avg", "blind")     # dead_model["blind"]: see log_odds
+
+
 def _fitted():
     """Models written by tools/fit_evidence.py (fitted on the external tuning games only)."""
     try:
@@ -465,9 +468,22 @@ def log_odds(c, dead_model=None, team_model=None):
     _check(names, dead_model["ball"])
     seen = c["present"]
     dead[seen] = apply_model(x[seen], dead_model["ball"])
+    mode = dead_model.get("blind")      # None: the trees alone; else the ball-blind network too
+    if mode is not None:
+        if mode not in BLIND_MODES:
+            raise ValueError("dead_model['blind'] must be one of {}".format(BLIND_MODES))
+        from . import blind
+        b = blind.apply(blind.weights(dead_model), blind.inputs(c["tracking"], c))
+        if mode == "blind":
+            dead = b
+        else:                           # split: network where there is no ball; avg: and halfway
+            if mode == "avg":           # to the trees where there is one
+                dead[seen] = 0.5 * (dead[seen] + b[seen])
+            dead[~seen] = b[~seen]
     if team_model.get("design") == "neural":      # the network of neural.py reads the tracking
         from . import neural
-        return dead, neural.team_log_odds(c, team_model, c["tracking"])
+        _, team, c["change_lo"] = neural.outputs(c, team_model, c["tracking"])
+        return dead, team
     names, x = (player_design if team_model.get("design") == "players" else team_design)(c)
     _check(names, team_model)
     team = apply_model(x, team_model)

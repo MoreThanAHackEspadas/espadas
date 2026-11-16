@@ -55,7 +55,7 @@ def features(tracking):
     c = evidence.clues(tracking)
     dead, team = evidence.log_odds(c)
     return {"half_blocks": c["half_blocks"], "present": c["present"],
-            "dead_lo": dead, "team_lo": team}
+            "dead_lo": dead, "team_lo": team, "change_lo": c.get("change_lo")}
 
 
 def dead_mask(f, p, first, stop):

@@ -173,10 +173,9 @@ def _encode(w, p, mask):
     return out
 
 
-def forward(w, p, mask, g):
-    """(n, 3) raw outputs (dead, home, change) for one unbroken run of frames (a half).
-    g must already be scaled (g * w["gscale"])."""
-    x = np.concatenate([_encode(w, p, mask), g], axis=1)
+def trunk(w, x):
+    """What follows the player encoder: frame layer, residual dilated convolutions, output layer.
+    x: (n, encoder + frame-level inputs), the frame-level part already scaled."""
     x = _relu(x @ w["frame.weight"].T + w["frame.bias"])
     for i, d in enumerate(dilations(w)):
         y = _norm(x, w["norms.%d.weight" % i], w["norms.%d.bias" % i])
@@ -184,6 +183,12 @@ def forward(w, p, mask, g):
         x = x + y @ w["mix.%d.weight" % i].T + w["mix.%d.bias" % i]
     x = _norm(x, w["out_norm.weight"], w["out_norm.bias"])
     return x @ w["out.weight"].T + w["out.bias"]
+
+
+def forward(w, p, mask, g):
+    """(n, 3) raw outputs (dead, home, change) for one unbroken run of frames (a half).
+    g must already be scaled (g * w["gscale"])."""
+    return trunk(w, np.concatenate([_encode(w, p, mask), g], axis=1))
 
 
 def dilations(w):
@@ -194,29 +199,50 @@ def swap_inputs(p, mask, g, perm, sign):
     return p[:, ::-1] * PLAYER_SWAP_SIGN, mask[:, ::-1], g[:, perm] * sign
 
 
-def apply(w, inp):
-    """(dead log-odds, home log-odds) per frame of the match; 0 outside the halves."""
+def _sym(w, p, mask, g, perm, sign):
+    """(dead, home, change) of one net on one half: the frames as they are and team-swapped."""
+    a = forward(w, p, mask, g)
+    b = forward(w, *swap_inputs(p, mask, g, perm, sign))
+    return (a[:, 0] + b[:, 0]) / 2.0, (a[:, 1] - b[:, 1]) / 2.0, (a[:, 2] + b[:, 2]) / 2.0
+
+
+def apply(ws, inp, mirror=False):
+    """(dead, home, change) log-odds per frame of the match; 0 outside the halves.
+
+    ws: one weights dict or a list of them (an ensemble, averaged). Each net is evaluated on the
+    frames as they are and team-swapped (home flips sign exactly, dead and change stay) and, with
+    `mirror`, also on the pitch mirrored (y flipped; the teams stay). Rounded once, at the end."""
+    ws = [ws] if isinstance(ws, dict) else list(ws)
     names = list(inp["names"])
-    if names != list(w["names"]):
-        raise RuntimeError("neural model was fitted on different inputs; re-run "
-                           "tools/fit_neural.py")
     perm, sign = global_swap(names)
-    n = len(inp["globals"])
-    dead, team = np.zeros(n), np.zeros(n)
-    for _, first, last in inp["half_blocks"]:
-        s = slice(first, last + 1)
-        p, mask = inp["players"][s], inp["mask"][s]
-        g = inp["globals"][s] * w["gscale"]
-        a = forward(w, p, mask, g)
-        b = forward(w, *swap_inputs(p, mask, g, perm, sign))
-        dead[s] = (a[:, 0] + b[:, 0]) / 2.0
-        team[s] = (a[:, 1] - b[:, 1]) / 2.0
-    return np.round(dead, ROUND), np.round(team, ROUND)
+    flip = global_flip(names)
+    out = np.zeros((3, len(inp["globals"])))
+    for w in ws:
+        if names != list(w["names"]):
+            raise RuntimeError("neural model was fitted on different inputs; re-run "
+                               "tools/fit_neural.py")
+        for _, first, last in inp["half_blocks"]:
+            s = slice(first, last + 1)
+            p, mask = inp["players"][s], inp["mask"][s]
+            g = inp["globals"][s] * w["gscale"]
+            for k, x in enumerate(_sym(w, p, mask, g, perm, sign)):
+                out[k, s] += x
+            if mirror:
+                for k, x in enumerate(_sym(w, p * PLAYER_FLIP_SIGN, mask, g * flip, perm, sign)):
+                    out[k, s] += x
+    out /= len(ws) * (2 if mirror else 1)
+    return tuple(np.round(out, ROUND))
+
+
+def outputs(c, model, tracking):
+    """(dead, home, change) log-odds per frame from the network(s) of `model` (see weights)."""
+    ws, mirror = weights(model)
+    return apply(ws, inputs(tracking, c), mirror)
 
 
 def team_log_odds(c, model, tracking):
     """Home log-odds per frame. The network's dead output is not used: see DEAD below."""
-    return apply(weights(model), inputs(tracking, c))[1]
+    return outputs(c, model, tracking)[1]
 
 
 # DEAD: the network also gives dead log-odds, and on the external games they are very good
@@ -248,14 +274,27 @@ def unpack(packed):
     return w
 
 
+def pack_many(ws, mirror=False):
+    """An ensemble of nets and the mirror flag, for neural_weights.PACKED."""
+    return {"nets": [pack(w) for w in ws], "mirror": bool(mirror)}
+
+
 _CACHE = {}
 
 
 def weights(model=None):
-    """The fitted weights: from `model` if it carries them (tools), else neural_weights.py."""
+    """(list of weight dicts, mirror flag): from `model` if it carries them ("w": one dict or a
+    list, optional "mirror"; tools), else neural_weights.PACKED: one packed net (the first
+    version) or {"nets": [packed, ...], "mirror": bool}."""
     if model is not None and "w" in model:
-        return model["w"]
+        w = model["w"]
+        return (list(w) if isinstance(w, (list, tuple)) else [w]), bool(model.get("mirror", False))
     if "shipped" not in _CACHE:
         from . import neural_weights
-        _CACHE["shipped"] = unpack(neural_weights.PACKED)
+        packed = neural_weights.PACKED
+        if "nets" in packed:
+            _CACHE["shipped"] = ([unpack(p) for p in packed["nets"]],
+                                 bool(packed.get("mirror", False)))
+        else:
+            _CACHE["shipped"] = ([unpack(packed)], False)
     return _CACHE["shipped"]

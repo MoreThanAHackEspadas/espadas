@@ -56,7 +56,7 @@ def _apply(job):
     if not os.path.exists(path):
         w = fit_neural.fitted(train)
         view = fit_neural.load_view(number, tag)
-        net_dead, team = neural.apply(w, view)
+        net_dead, team, _ = neural.apply(w, view)
         dead = fit_neural.dead_log_odds(fit_neural.dead_models(train), view)
         report = fit_neural.frame_report(w, view) if tag in STD else {}
         os.makedirs(os.path.dirname(path), exist_ok=True)

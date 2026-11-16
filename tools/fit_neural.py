@@ -362,7 +362,7 @@ def dead_log_odds(model, view):
 
 def frame_report(w, view):
     """Per-frame quality of one network on one view: dict of log-loss and accuracy."""
-    dead, team = neural.apply(w, view)
+    dead, team, _ = neural.apply(w, view)
     gt = view["gt"]
     ok = view["graded"] & np.isin(gt, ["H", "A", "D"])
     live = ok & (gt != "D")

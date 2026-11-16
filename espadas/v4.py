@@ -138,6 +138,7 @@ PARAMS = {
     "touch_mode": "both",    # 6.7: kink touches + carrier touches (touches.carrier)
     "carrier_reach": 2.5,    # m; nearest player this close = the ball's carrier
     "carrier_frames": 6,    # frames a carrier spell must last to count
+    "w_change": 0.0,         # bonus per switch, x the network's P(change here); 0 = off
 }
 
 GRID = {
@@ -168,6 +169,7 @@ GRID = {
     "hold_frames": [0, 12, 25, 38, 50],
     "carrier_reach": [1.0, 1.5, 2.0, 2.5, 3.5],
     "carrier_frames": [3, 6, 12, 25, 50],
+    "w_change": [0.0, 2.0, 5.0, 10.0, 20.0, 40.0],
 }
 
 
@@ -239,9 +241,10 @@ def emissions(f, p, first, stop, touch=None):
     return e
 
 
-def viterbi(emis, trans, start=None):
+def viterbi(emis, trans, start=None, bonus=None):
     """Best state path (int8 per frame) for log-scores emis (n, S), trans (S, S) and optional
-    start log-scores (S,) (None = free start, equal prior).
+    start log-scores (S,) (None = free start, equal prior). With `bonus` (one float per frame),
+    every move between two different states arriving at frame t also gains bonus[t].
 
     Ties go to the lowest state index, both between predecessors and for the final state, so the
     answer is deterministic. Pure Python on purpose: with 5 states it is faster than a NumPy step
@@ -258,17 +261,31 @@ def viterbi(emis, trans, start=None):
                                                                                    float))]
     back = [None] * n
     states = range(s)
+    # the bonus as plain floats, and 0 on staying put, so the loop below is the same either way
+    extra = None if bonus is None else [float(b) for b in bonus]
+    moves = [[(i, cost, i != j) for i, cost in preds[j]] for j in range(s)]
     for t in range(1, n):
         row = rows[t]
         new, ptr = [0.0] * s, [0] * s
-        for j in states:
-            best, arg = NEG, -1
-            for i, cost in preds[j]:
-                v = score[i] + cost
-                if v > best:
-                    best, arg = v, i
-            new[j] = best + row[j]
-            ptr[j] = arg
+        if extra is None:
+            for j in states:
+                best, arg = NEG, -1
+                for i, cost in preds[j]:
+                    v = score[i] + cost
+                    if v > best:
+                        best, arg = v, i
+                new[j] = best + row[j]
+                ptr[j] = arg
+        else:
+            gain = extra[t]
+            for j in states:
+                best, arg = NEG, -1
+                for i, cost, move in moves[j]:
+                    v = score[i] + cost + gain if move else score[i] + cost
+                    if v > best:
+                        best, arg = v, i
+                new[j] = best + row[j]
+                ptr[j] = arg
         score, back[t] = new, ptr
     path = np.empty(n, dtype=np.int8)
     state = max(states, key=lambda j: (score[j], -j))
@@ -300,9 +317,13 @@ def decode_states(f, params=None):
     trans = transitions(p)
     touch = touch_list(f, p)
     out = np.full(len(f["present"]), -1, dtype=np.int8)
+    bonus = None
+    if p["w_change"] > 0 and f.get("change_lo") is not None:
+        bonus = p["w_change"] / (1.0 + np.exp(-np.clip(np.nan_to_num(f["change_lo"]), -50, 50)))
     for _, first, last in f["half_blocks"]:
         stop = last + 1
-        path = viterbi(emissions(f, p, first, stop, touch), trans, START)
+        path = viterbi(emissions(f, p, first, stop, touch), trans, START,
+                       None if bonus is None else bonus[first:stop])
         out[first:stop] = clean_up(path, int(p["min_dead"]), int(p["min_alive"]))
     return out
 
