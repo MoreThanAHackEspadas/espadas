@@ -6,8 +6,13 @@ live ball hidden unless stated. Our match is not used anywhere here.
 
 **Steps tried: 6 runs (steps 1, 2, 3, 4, the combination 2 + 3, and the player-level team model
 of 13 Nov, last section).** Step 5 was measured only. The player-level model, built on step 3,
-meets every condition of rule 5 and is the one final candidate (branch `architecture-review`).
-Until the team merges it, the submission is still `main@53861c0`.
+meets every condition of rule 5 and is the one final candidate (branch `architecture-review`),
+merged to `main` on 16 Nov (PR #6).
+
+**Superseded on 16 Nov.** Later work, done after the 14 Nov cut-off of the rule, replaced the
+team evidence by a network and added a ball-blind stoppage network, trained on all ten external
+matches (PR #7). That build and its results are in `docs/neural_result.md`; the README gives the
+hash of the current build. This document is kept as the record of the work up to 13 Nov.
 
 ## Baseline: the frozen method through leave-one-game-out (11 Nov)
 
@@ -374,6 +379,7 @@ smaller on Metrica (+0.04) than on IDSSE (+0.06 to +0.11). (3) This is the sixth
 the same leave-one-game-out (rule 9); the margin over the 0.02 bar is three times the bar.
 (4) The ten-match pool (rule 6) was not run for this model.
 
-**Outcome.** The one final candidate under rule 7, named on 13 Nov. Rule 10 applies once the team
-merges it: new SHA-256 in the README and tech doc (done on this branch), fresh-clone rebuild,
+**Outcome.** The one final candidate under rule 7, named on 13 Nov, merged on 16 Nov (PR #6)
+and then superseded by the neural models of PR #7 (`docs/neural_result.md`). Rule 10 applied
+once the team merged it: new SHA-256 in the README and tech doc (done on this branch), fresh-clone rebuild,
 determinism, data guard, then the tag.

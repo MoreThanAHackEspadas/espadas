@@ -4,9 +4,10 @@ Built on the player-level candidate of 13 Nov (branch `architecture-review`, PR 
 spellF1 on the match left out, mean over the four tracker levels, `X` off, 25% of the live ball
 hidden unless stated. Our match is not used anywhere here.
 
-**Status: proposed for submission, pending the team's confirmation on PR #7.** This work was
-done after the 14 Nov cut-off of `docs/refinement2_rule.md`, which allows one final candidate,
-and that candidate is PR #6. Submitting this instead is a decision for the team.
+**Status: the build of PR #7.** This work was done after the 14 Nov cut-off of
+`docs/refinement2_rule.md`, which allows one final candidate; that candidate was the
+player-level tree model (PR #6, merged to `main` on 16 Nov). Merging PR #7 is the team's
+decision to submit this build instead.
 
 **The shipped models are those of the last two sections** (ten matches, possession-weighted
 loss, ball-blind stoppage network; SHA-256

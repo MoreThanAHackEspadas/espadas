@@ -61,11 +61,12 @@ on one machine, see the note on other machines there):
 3b35ab3bce0b73f20e627f580db79525011dacc5d1ad9e0f594404cfe7fe1fe0
 ```
 
-This branch is not the agreed submission until the team confirms it on PR #7. The candidate
-named under `docs/refinement2_rule.md` is the player-level tree model of 13 Nov (PR #6, SHA-256
-`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`). The first build of this
-branch (one network on the five-match pool, before the ten-match models) had SHA-256
-`40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65`.
+Earlier builds, for reference. The player-level tree models of 13 Nov (PR #6, the candidate
+named under `docs/refinement2_rule.md`): SHA-256
+`fba0c450cebf7444c7521a007798e5b2e122b6c6bc617ea5639add561439741e`. The first neural build (one
+network on the five-match pool, PR #7 before the ten-match models): SHA-256
+`40a1012ce46f49ca2c715312524132c16ccdd69e3c1b9605169e5bf30c695c65`. The neural models were made
+after that rule's 14 Nov cut-off; merging PR #7 is the team's decision to submit them instead.
 The file frozen on 11 Nov (`main@53861c0`, logistic evidence models, `docs/idsse_comparison.md`)
 has SHA-256 `7782b52f4b58419f0289e273ee0ae93faa6e4815c949ad12f61a887ad8e456eb`.
 
@@ -130,8 +131,8 @@ the ground truth or the provided video. External data lives outside this repo un
 
 | Dataset | Source | Terms | Used for |
 |---|---|---|---|
-| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning pool (Games 1, 3) and held-out selection (Game 2, 10 Nov) |
-| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Tuning pool (matches 12, 13, 15) and held-out comparison (11, 14, 16, 17, 11 Nov); split in `espadas/external/__init__.py` |
+| Metrica Sports sample data, Games 1–3 (tracking + events) | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Written permission: the `README.md` of Metrica's repository. Published openly by Metrica Sports for the analytics community; no formal licence file. That README's terms: "be responsible with the use of this data" and, for public use, "acknowledge the source". **Source: Metrica Sports**, credited here and in the tech doc. Not redistributed (downloaded at a pinned commit, never committed). | Tuning pool (Games 1, 3) and held-out selection (Game 2, 10 Nov). Since 16 Nov all three are training data for the shipped networks and tree dead models (Game 2 was already spent as a test); the decoder settings were tuned on Games 1 and 3 only |
+| DFL / Sportec "IDSSE" open dataset: 7 matches of the 2022/23 Bundesliga (2) and 2. Bundesliga (5), match information + TRACAB Gen5 positions with per-frame ball status and possession | figshare, DOI [10.6084/m9.figshare.28196177](https://doi.org/10.6084/m9.figshare.28196177), version 1 | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). **Source: Bassek, M., Rein, R., Weber, H. & Memmert, D., "An integrated dataset of spatiotemporal and event data in elite soccer", *Scientific Data* 12, 195 (2025); data owner DFL Deutsche Fußball Liga / Sportec Solutions.** We convert the positions to our arrays and derive H/A/D labels from the flags (changes made); not redistributed. | Tuning pool (matches 12, 13, 15) and held-out comparison (11, 14, 16, 17, 11 Nov); split in `espadas/external/__init__.py`. Since 16 Nov all seven are training data for the shipped networks and tree dead models (the held-out four were already spent as tests); the decoder settings were tuned on 12, 13, 15 only |
 
 Reference labels on external games are derived **by code** from each game's event data
 (`espadas/external/events.py`, rules documented there); on the IDSSE matches from the
@@ -164,7 +165,9 @@ python tools/idsse_compare.py --dry-run            # 11 Nov one-shot comparison 
 readers and `bench.available()` unless the caller opts in (`heldout=True`), before any file is
 opened. Only a real run of `tools/selection.py` (Game 2) or `tools/idsse_compare.py` (IDSSE)
 does that, once each; both have been run and refuse a second run. The other tools work on the
-tuning pool and touch a held-out game only with an explicit `--heldout`.
+tuning pool and touch a held-out game only with an explicit `--heldout`, or, for the
+16 Nov networks, through `experiments/neural_v2/` and `tools/fit_neural.py`, which read all ten
+matches on purpose (the full pool of `docs/refinement2_rule.md`).
 
 The external games lose the ball almost only during stoppages (the IDSSE ball is never lost),
 while ours also loses it in live play. So the bench hides ball bursts in live play (default 25% of live frames; see
